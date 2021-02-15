@@ -57,12 +57,6 @@ unit OmniXMLDatabase;
 
 interface
 
-{$I OmniXML.inc}
-
-{$IFDEF OmniXML_HasZeroBasedStrings}
-  {$ZEROBASEDSTRINGS OFF}
-{$ENDIF}
-
 uses
   {$IFDEF MSWINDOWS}
   Windows,
@@ -230,7 +224,7 @@ begin
         else if fieldClass.InheritsFrom(TBCDField) or
                 fieldClass.InheritsFrom(TCurrencyField) then
           fieldElement.Text := XMLRealToStr(field.AsCurrency)
-        else if fieldClass.InheritsFrom(TFloatField) then
+        else if fieldClass.InheritsFrom(TCurrencyField) then
           fieldElement.Text := XMLRealToStr(field.AsFloat)
         else if fieldClass.InheritsFrom(TDateField) then
           fieldElement.Text := XMLDateToStr(field.AsDateTime)
@@ -443,7 +437,7 @@ begin { XMLNodeToDatasetRow }
             else if fieldClass.InheritsFrom(TBCDField) or
                     fieldClass.InheritsFrom(TCurrencyField) then
               field.AsCurrency := XMLStrToRealDef(nodeData, 0)
-            else if fieldClass.InheritsFrom(TFloatField) then
+            else if fieldClass.InheritsFrom(TCurrencyField) then
               field.AsFloat := XMLStrToRealDef(nodeData, 0)
             else if fieldClass.InheritsFrom(TDateField) then
               field.AsDateTime := XMLStrToDateDef(nodeData, 0)

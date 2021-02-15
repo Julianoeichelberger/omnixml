@@ -2,20 +2,15 @@
    different types, manipulate nodes, load/save XML documents.
    @author Primoz Gabrijelcic
    @desc <pre>
-   (c) 2016 Primoz Gabrijelcic
+   (c) 2011 Primoz Gabrijelcic
    Free for personal and commercial use. No rights reserved.
 
    Author            : Primoz Gabrijelcic
    Creation date     : 2001-10-25
-   Last modification : 2016-12-14
-   Version           : 1.31a
+   Last modification : 2011-03-01
+   Version           : 1.30
 </pre>*)(*
    History:
-     1.31a: 2016-12-14
-       - Fixed SelectNode when names of parent and child node are the same.
-     1.31: 2013-12-13
-       - Can be compiled without VCL (/dNOVCL). That also disables font persistency.
-       - Added procedure SetNodeAttrs.
      1.30: 2011-03-01
        - Convert EFOpenError exception in XMLLoadFromFile to function result.
      1.29: 2011-02-07
@@ -139,9 +134,6 @@ interface
 
 {$I OmniXML.inc}
 
-{$IFDEF OmniXML_HasZeroBasedStrings}
-  {$ZEROBASEDSTRINGS OFF}
-{$ENDIF}
 {$IFDEF CONDITIONALEXPRESSIONS}
   {$IF (CompilerVersion >= 17)} //Delphi 2005 or newer
     {$DEFINE OmniXmlUtils_Enumerators}
@@ -154,20 +146,14 @@ interface
   {$IFEND}
 {$ENDIF}
 
-{$IFDEF NEXTGEN}
-  {$DEFINE NoVCL}
-{$ENDIF NEXTGEN}
-
 uses
 {$IFDEF MSWINDOWS}
   Windows,
 {$ENDIF}
   SysUtils,
   Classes,
-{$IFNDEF NoVCL}
   Graphics,
-{$ENDIF}
-  OmniXML_Types,
+  OmniXML_Types, 
   OmniXML
 {$IFDEF USE_MSXML}
   ,OmniXML_MSXML
@@ -247,9 +233,7 @@ type
   function GetNodeTextDate(parentNode: IXMLNode; nodeTag: string; defaultValue: TDateTime): TDateTime; overload;
   function GetNodeTextTime(parentNode: IXMLNode; nodeTag: string; defaultValue: TDateTime): TDateTime; overload;
   function GetNodeTextBinary(parentNode: IXMLNode; nodeTag: string; value: TStream): boolean;
-{$IFNDEF NoVCL}
   function GetNodeTextFont(parentNode: IXMLNode; nodeTag: string; value: TFont): boolean;
-{$ENDIF}
 
   {:A family of functions that will return node text reformatted into another
     type or raise exception if node doesn't exist or if node text is not in a
@@ -376,10 +360,8 @@ type
     value: TDateTime): IXMLNode;
   function SetNodeTextBinary(parentNode: IXMLNode; nodeTag: string;
     const value: TStream): IXMLNode;
-{$IFNDEF NoVCL}
   function SetNodeTextFont(parentNode: IXMLNode; nodeTag: string;
     value: TFont): IXMLNode;
-{$ENDIF}
 
   {:Set the value of the text child and return its interface.
   }
@@ -416,7 +398,6 @@ type
     value: TDateTime);
   procedure SetNodeAttrTime(parentNode: IXMLNode; attrName: string;
     value: TDateTime);
-  procedure SetNodeAttrs(parentNode: IXMLNode; attrNamesValues: array of string);
 
   {:A family of functions used to convert value to string according to the
     conversion rules used in this unit. Used in Set* functions above.
@@ -501,25 +482,21 @@ type
   function XMLLoadFromString(xmlDocument: IXMLDocument;
     const xmlData: XmlString): boolean;
 
- {$IFDEF OmniXML_SupportAnsiStrings}
   {:Load XML document from an ansi string.
   }
   function XMLLoadFromAnsiString(xmlDocument: IXMLDocument;
     const xmlData: AnsiString): boolean;
- {$ENDIF OmniXML_SupportAnsiStrings}
 
   {:Save XML document to a wide string.
   }
   function XMLSaveToString(xmlDocument: IXMLDocument;
     outputFormat: TOutputFormat = ofNone): XmlString;
 
- {$IFDEF OmniXML_SupportAnsiStrings}
   {:Save XML document to an ansi string, automatically adding UTF8 processing
     instruction if required.
   }
   function XMLSaveToAnsiString(xmlDocument: IXMLDocument;
     outputFormat: TOutputFormat = ofNone): AnsiString;
- {$ENDIF OmniXML_SupportAnsiStrings}
 
   {:Load XML document from a stream.
   }
@@ -534,12 +511,7 @@ type
   {:Load XML document from a file.
   }
   function XMLLoadFromFile(xmlDocument: IXMLDocument;
-    const xmlFileName: string): boolean; overload;
-
-  {:Load XML document from a file, returning error message on error.
-  }
-  function XMLLoadFromFile(xmlDocument: IXMLDocument; const xmlFileName: string;
-    out errorMsg: string): boolean; overload;
+    const xmlFileName: string): boolean;
 
   {:Save XML document to a file.
   }
@@ -702,15 +674,11 @@ const
 
 function DecimalSeparator: char;
 begin
-  {$IFDEF CONDITIONALEXPRESSIONS}
-    {$IF RTLVersion >= 22.0}  // Delphi XE
-    Result := FormatSettings.DecimalSeparator;
-    {$ELSE}
-    Result := SysUtils.DecimalSeparator;  // Delphi 2010 and below
-    {$IFEND}
+  {$IFDEF Unicode}
+  Result := FormatSettings.DecimalSeparator;
   {$ELSE}
   Result := SysUtils.DecimalSeparator;
-  {$ENDIF}  // CONDITIONALEXPRESSIONS
+  {$ENDIF Unicode}
 end; { DecimalSeparator }
 
 {:Convert time from string (ISO format) to TDateTime.
@@ -1689,7 +1657,6 @@ begin
   finally FreeAndNil(decoded); end;
 end; { GetNodeTextBinary }
 
-{$IFNDEF NoVCL}
 function GetNodeTextFont(parentNode: IXMLNode; nodeTag: string; value: TFont): boolean;
 var
   fontNode: IXMLNode;
@@ -1714,7 +1681,6 @@ begin
     Result := true;
   end;
 end; { GetNodeTextFont }
-{$ENDIF}
 
 function GetNodeAttr(parentNode: IXMLNode; attrName: string;
   var value: XmlString): boolean;
@@ -2050,7 +2016,6 @@ begin
   Result := SetNodeText(parentNode,nodeTag,XMLBinaryToStr(value));
 end; { SetNodeTextBinary }
 
-{$IFNDEF NoVCL}
 function SetNodeTextFont(parentNode: IXMLNode; nodeTag: string;
   value: TFont): IXMLNode;
 var
@@ -2070,7 +2035,6 @@ begin
   Move(fStyle, iStyle, SizeOf(TFontStyles));
   SetNodeAttrInt(fontNode, 'Style', iStyle);
 end; { SetNodeTextFont }
-{$ENDIF}
 
 procedure SetNodeAttr(parentNode: IXMLNode; attrName: string;
   value: XmlString);
@@ -2129,39 +2093,6 @@ procedure SetNodeAttrTime(parentNode: IXMLNode; attrName: string;
 begin
   SetNodeAttr(parentNode,attrName,XMLTimeToStr(value));
 end; { SetNodeAttrTime }
-
-procedure SetNodeAttrs(parentNode: IXMLNode; attrNamesValues: array of string);
-var
-  nameValue: string;
-  name: string;
-  value: string;
-  valuePos: Integer;
-  I: Integer;
-begin
-  for I := Low(attrNamesValues) to High(attrNamesValues) do
-  begin
-    nameValue := attrNamesValues[I];
-    valuePos := Pos('=', nameValue);
-    if valuePos > 0 then
-    begin
-      name := Copy(nameValue, 1, valuePos-1);
-      value := Copy(nameValue, valuePos+1, Length(nameValue));
-      if Length(value) > 0 then
-      begin
-        if value[1] = '"' then
-          Delete(value, 1, 1);
-        if value[Length(value)] = '"' then
-          SetLength(value, Length(value)-1);
-      end;
-    end
-    else
-    begin
-      name := nameValue;
-      value := '';
-    end;
-    SetNodeAttr(parentNode, name, value);
-  end;
-end; { SetNodeAttrs }
 
 {$IFNDEF USE_MSXML}
 function InternalFilterNodes(parentNode: IXMLNode; matchesName,
@@ -2435,21 +2366,21 @@ end; { FindProcessingInstruction }
 }
 function SelectNode(parentNode: IXMLNode; const nodeTag: string): IXMLNode;
 begin
-  SelectNode(parentNode, nodeTag, Result);
+  if IsDocument(parentNode) and (assigned(DocumentElement(parentNode))) then
+    Result := DocumentElement(parentNode)
+  else
+    Result := parentNode;
+  if (nodeTag <> '') and assigned(Result) and (Result.NodeName <> nodeTag) then
+    Result := Result.SelectSingleNode(nodeTag);
 end; { SelectNode }
 
 function SelectNode(parentNode: IXMLNode; const nodeTag: string; var childNode: IXMLNode): boolean;
 begin
-  if IsDocument(parentNode) and (assigned(DocumentElement(parentNode))) then begin
-    childNode := DocumentElement(parentNode);
-    if (nodeTag <> '') and assigned(childNode) and (childNode.NodeName = nodeTag) then begin
-      Result := true;
-      Exit;
-    end;
-  end
+  if IsDocument(parentNode) and (assigned(DocumentElement(parentNode))) then
+    childNode := DocumentElement(parentNode)
   else
     childNode := parentNode;
-  if (nodeTag <> '') and assigned(childNode) then
+  if (nodeTag <> '') and assigned(childNode) and (childNode.NodeName <> nodeTag) then
     childNode := childNode.SelectSingleNode(nodeTag);
   Result := assigned(childNode);
 end; { SelectNode }
@@ -2504,7 +2435,6 @@ begin
   Result := xmlDocument.LoadXML(xmlData);
 end; { XMLLoadFromString }
 
-{$IFDEF OmniXML_SupportAnsiStrings}
 {:@param   xmlDocument XML document.
   @param   xmlData     XML document, stored in the string.
   @returns True if xmlData was successfully parsed and loaded into the
@@ -2521,7 +2451,6 @@ begin
     Result := XMLLoadFromStream(xmlDocument, sStr);
   finally FreeAndNil(sStr); end;
 end; { XMLLoadFromString }
-{$ENDIF OmniXML_SupportAnsiStrings}
 
 {:@param   xmlDocument  XML document.
   @param   outputFormat XML document formatting.
@@ -2555,7 +2484,6 @@ begin
 {$ENDIF USE_MSXML}
 end; { XMLSaveToString }
 
-{$IFDEF OmniXML_SupportAnsiStrings}
 {:@param   xmlDocument  XML document.
   @param   outputFormat XML document formatting.
   @returns Contents of the XML document, stored in the string.
@@ -2572,7 +2500,6 @@ begin
     Result := AnsiString(sStr.DataString);
   finally FreeAndNil(sStr); end;
 end; { XMLSaveToString }
-{$ENDIF OmniXML_SupportAnsiStrings}
 
 {:@param   xmlDocument XML document.
   @param   xmlStream   Stream containing XML document.
@@ -2627,30 +2554,12 @@ end; { XMLSaveToStream }
   @since   2001-10-24
 }
 function XMLLoadFromFile(xmlDocument: IXMLDocument; const xmlFileName: string): boolean;
-var
-  errorMsg: string;
 begin
-  Result := XMLLoadFromFile(xmlDocument, xmlFileName, errorMsg);
-end; { XMLLoadFromFile }
-
-{:@param   xmlDocument XML document.
-  @param   xmlFileName Name of the file containing XML document.
-  @param   errorMsg Empty if XML was loaded without a problem, error message instead.
-  @returns True if contents of file were successfully parsed and loaded into the
-           xmlDocument.
-  @since   2014-11-19
-}
-function XMLLoadFromFile(xmlDocument: IXMLDocument; const xmlFileName: string;
-  out errorMsg: string): boolean;
-begin
-  errorMsg := '';
   try
     Result := xmlDocument.Load(xmlFileName);
   except
-    on E: EFOpenError do begin
-      errorMsg := E.Message;
+    on E: EFOpenError do
       Result := false;
-    end;
   end;
 end; { XMLLoadFromFile }
 

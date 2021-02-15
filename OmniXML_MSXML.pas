@@ -18,10 +18,6 @@ interface
 
 {$I OmniXML.inc}
 
-{$IFDEF OmniXML_HasZeroBasedStrings}
-  {$ZEROBASEDSTRINGS OFF}
-{$ENDIF}
-
 {$IFNDEF MSWINDOWS}
   {$MESSAGE FATAL 'MSXML can only be used on Windows platform'}
 {$ENDIF}

@@ -11,10 +11,6 @@
 *
 * The Initial Developer of the Original Code is Miha Remec
 *   http://omnixml.com/
-*
-*  Contributor(s):
-*    (op) Ondrej Pokorny
-*
 *******************************************************************************)
 unit OmniXML_Dictionary;
 
@@ -22,17 +18,8 @@ interface
 
 {$I OmniXML.inc}
 
-{$IFDEF OmniXML_HasZeroBasedStrings}
-  {$ZEROBASEDSTRINGS OFF}
-{$ENDIF}
-
 uses
-  {$IFDEF OmniXML_Namespaces}
-  System.Classes, System.SysUtils, System.IniFiles,
-  {$ELSE}
-  Classes, SysUtils,
-  {$IFDEF FPC}contnrs, {$ELSE}IniFiles, {$ENDIF}
-  {$ENDIF}
+  Classes, SysUtils, IniFiles,
   OmniXML_Types;
 
 const
@@ -42,14 +29,9 @@ type
   TDicId = LongWord;
   TDictionary = class
   private
-    {$IFDEF FPC}
-    FHashTable: TFPHashList;
-    {$ELSE}
     FHashTable: TStringHash;
-    {$ENDIF}
     FTextList: TStringList;
     FMaxItemsBeforeResize: Integer;
-    FLastHashSize: Integer;
     procedure Resize;
   public
     constructor Create; reintroduce;
@@ -113,21 +95,13 @@ end;
 
 function TDictionary.Add(const Text: XmlString): TDicId;
 var
-  {$IFDEF FPC}
-  Value: NativeInt;
-  {$ELSE}
   Value: Integer;
-  {$ENDIF}
   {$IFNDEF UNICODE}
   UTF8Text: UTF8String;
   {$ENDIF}  // UNICODE
 begin
   {$IFDEF UNICODE}
-    {$IFDEF FPC}
-    Value := FHashTable.FindIndexOf(Text);
-    {$ELSE}
-    Value := FHashTable.ValueOf(Text);
-    {$ENDIF}
+  Value := FHashTable.ValueOf(Text);
   {$ELSE}
   UTF8Text := ToUTF8(Text);
   Value := FHashTable.ValueOf(UTF8Text);
@@ -145,7 +119,7 @@ begin
 
     if FTextList.Count < FMaxItemsBeforeResize then
       {$IFDEF UNICODE}
-      FHashTable.Add(Text, {$IFDEF FPC}{%H-}Pointer(Value){$ELSE}Value{$ENDIF})
+      FHashTable.Add(Text, Value)
       {$ELSE}
       FHashTable.Add(UTF8Text, Value)
       {$ENDIF}  // UNICODE
@@ -172,20 +146,14 @@ var
 begin
   FHashTable.Free;
 
-  HashSize := GetGoodHashSize(FLastHashSize+1);
-  FLastHashSize := HashSize;
+  HashSize := GetGoodHashSize(FTextList.Count);
 
-  {$IFDEF FPC}
-  FHashTable := TFPHashList.Create;
-  FHashTable.Capacity := HashSize;
-  {$ELSE}
   FHashTable := TStringHash.Create(HashSize);
-  {$ENDIF}
   FMaxItemsBeforeResize := Trunc((HashSize / 3) * 2);
 
   // re-add items to hash
   for ItemIndex := 0 to FTextList.Count - 1 do
-    FHashTable.Add(FTextList[ItemIndex], {$IFDEF FPC}{%H-}Pointer(ItemIndex){$ELSE}ItemIndex{$ENDIF});
+    FHashTable.Add(FTextList[ItemIndex], ItemIndex);
 end;
 
 end.

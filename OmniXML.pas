@@ -15,7 +15,6 @@
 * Contributor(s):                                                              *
 *   Primoz Gabrijelcic (gp)                                                    *
 *   Erik Berry (eb)                                                            *
-*   Ondrej Pokorny (op)                                                        *
 *******************************************************************************)
 unit OmniXML;
 
@@ -23,19 +22,31 @@ interface
 
 {$I OmniXML.inc}
 
-{$IFDEF OmniXML_HasZeroBasedStrings}
-  {$ZEROBASEDSTRINGS OFF}
-{$ENDIF}
-
 uses
-  {$IFDEF OmniXML_Namespaces}
-  System.Classes, System.SysUtils,
-  {$ELSE}
-  Classes, SysUtils,
-  {$ENDIF}
-  OEncoding, OTextReadWrite, OmniXML_Types, OmniXML_Dictionary
-  {$IFDEF OmniXML_Generics}, Generics.Collections{$ENDIF}
+  Classes, SysUtils
+  {$IFDEF MSWINDOWS}, GpTextStream {$ENDIF}
+  , OmniXML_Types, OmniXML_Dictionary
   ;
+
+const
+  {$IFDEF LINUX}
+  // copied from GpTextStream.pas
+  CP_UNICODE =  1200; // Unicode pseudo-codepage,
+  ISO_8859_1 = 28591; // Western Alphabet (ISO)
+  ISO_8859_2 = 28592; // Central European Alphabet (ISO)
+  ISO_8859_3 = 28593; // Latin 3 Alphabet (ISO)
+  ISO_8859_4 = 28594; // Baltic Alphabet (ISO)
+  ISO_8859_5 = 28595; // Cyrillic Alphabet (ISO)
+  ISO_8859_6 = 28596; // Arabic Alphabet (ISO)
+  ISO_8859_7 = 28597; // Greek Alphabet (ISO)
+  ISO_8859_8 = 28598; // Hebrew Alphabet (ISO)
+  ISO_8859_9 = 28599; // Turkish Alphabet (ISO)
+  {$ENDIF}
+  CP_UTF16 = CP_UNICODE;
+  CP_UTF8 = 65001;  // UTF-8 translation
+
+const
+  HEADER_UTF16: WideChar = WideChar($FEFF);  // don't change!
 
 const
   DEFAULT_DECIMALSEPARATOR  = '.';        // don't change!
@@ -71,9 +82,6 @@ const
   DOCUMENT_FRAGMENT_NODE = 11;
   // notation node
   NOTATION_NODE = 12;
-
-  CP_UTF16 = CP_UNICODE;
-
 
 type
   TNodeType = 1..12;
@@ -275,9 +283,8 @@ type
   IUnicodeStream = interface
     ['{F3ECA11F-EA18-491C-B59A-4203D5DC8CCA}']
     // private
-    function GetEncoding: TEncoding;
-    procedure SetEncoding(const AEncoding: TEncoding);
-    function GetBOMFound: Boolean;
+    function GetCodePage: Word;
+    procedure SetCodePage(const CodePage: Word);
     function GetOutputFormat: TOutputFormat;
     procedure SetOutputFormat(const Value: TOutputFormat);
     // public
@@ -285,8 +292,7 @@ type
     procedure DecreaseIndent;
     procedure WriteIndent(const ForceNextLine: Boolean = False);
     property OutputFormat: TOutputFormat read GetOutputFormat write SetOutputFormat;
-    property Encoding: TEncoding read GetEncoding write SetEncoding;
-    property BOMFound: Boolean read GetBOMFound;
+    property CodePage: Word read GetCodePage write SetCodePage;
     procedure UndoRead;
     function ProcessChar(var Char: XmlChar): Boolean;
     function GetNextString(var ReadString: XmlString; const Len: Integer): Boolean;
@@ -294,27 +300,51 @@ type
     function GetOutputBuffer: XmlString;
     function OutputBufferLen: Integer;
     procedure ClearOutputBuffer;
-    procedure WriteString(const Value: XmlString);
+    procedure WriteString(Value: XmlString);
   end;
 
 type
   TStreamMode = (smRead, smWrite);
 
+  {$IFDEF LINUX}
+  TUnicodeStream = class(TMemoryStream)
+  private
+    FOutputStream: TStream;
+  public
+    constructor Create(const OutputStream: TStream);
+    procedure WriteString(const Value: XmlString);
+    function Write(const Buffer; Count: Longint): Longint; override;
+  end;
+  {$ENDIF}
+
   TXMLTextStream = class(TInterfacedObject, IUnicodeStream)
   private
     FStreamMode: TStreamMode;
-    FReader: TOTextReader;
-    FWriter: TOTextWriter;
+    {$IFDEF MSWINDOWS}
+    FMode: TGpTSAccess;
+    FSize: Integer;
+    FXTS: TGpTextStream;
+    {$ENDIF}
+    {$IFDEF LINUX}
+    FXTS: TUnicodeStream;
+    {$ENDIF}
     FPreviousOutBuffer: XmlString;
     FOutBuffer: PXmlChar;
     FOutBufferPos,
     FOutBufferSize: Integer;
+    // undo support
+    FPreviousChar: XmlChar;
+    FReadFromUndo: Boolean;
+    FCanUndo: Boolean;
     FIndent: Integer;
     FOutputFormat: TOutputFormat;
-    fBOMFound: Boolean;
-    function GetEncoding: TEncoding;
-    procedure SetEncoding(const AEncoding: TEncoding);
-    function GetBOMFound: Boolean;
+    FLinePos,
+    FLine: Integer;
+    FLineStartPosition: Integer;
+    function GetPreviousChar: XmlChar;
+    property PreviousChar: XmlChar read GetPreviousChar;
+    function GetCodePage: Word;
+    procedure SetCodePage(const CodePage: Word);
     function GetOutputFormat: TOutputFormat;
     procedure SetOutputFormat(const Value: TOutputFormat);
   protected
@@ -326,12 +356,13 @@ type
     procedure DecreaseIndent;
     procedure WriteIndent(const ForceNextLine: Boolean = False);
     // helper functions
+    function GetPosition: Integer;
     function GetPreviousOutputBuffer: XmlString;
+    function GetLastLine: XmlString;
   public
     property OutputFormat: TOutputFormat read GetOutputFormat write SetOutputFormat;
-    property Encoding: TEncoding read GetEncoding write SetEncoding;
-    property BOMFound: Boolean read GetBOMFound;
-    constructor Create(const Stream: TStream; const Mode: TStreamMode; const Encoding: TEncoding; const WriteBOM: Boolean);
+    property CodePage: Word read GetCodePage write SetCodePage;
+    constructor Create(const Stream: TStream; const Mode: TStreamMode; const Encoding: Word = CP_UTF16);
     destructor Destroy; override;
     procedure UndoRead; virtual;
     function GetNextString(var ReadString: XmlString; const Len: Integer): Boolean;
@@ -339,7 +370,7 @@ type
     function GetOutputBuffer: XmlString;
     function OutputBufferLen: Integer;
     procedure ClearOutputBuffer;
-    procedure WriteString(const Value: XmlString);
+    procedure WriteString(Value: XmlString);
   end;
 
   IXMLParseError = interface
@@ -349,18 +380,16 @@ type
     function GetFilePos: Integer;
     function GetLine: Integer;
     function GetLinePos: Integer;
-    function GetSrcTextPos: Integer;
     function GetReason: string;
     function GetSrcText: XmlString;
     function GetURL: string;
     // public
     property ErrorCode: Integer read GetErrorCode;
     property FilePos: Integer read GetFilePos;
-    property Line: Integer read GetLine;//1-based
-    property LinePos: Integer read GetLinePos;//1-based
+    property Line: Integer read GetLine;
+    property LinePos: Integer read GetLinePos;
     property Reason: string read GetReason;
     property SrcText: XmlString read GetSrcText;
-    property SrcTextPos: Integer read GetSrcTextPos;//1-based, position of error in SrcText
     property URL: string read GetURL;
   end;
 
@@ -393,8 +422,6 @@ type
     function HasChildNodes: Boolean;
     function CloneNode(const Deep: Boolean): IXMLNode;
 
-    procedure SetCachedNodeIndex(const Index: integer);
-
     property NodeName: XmlString read GetNodeName;
     property NodeValue: XmlString read GetNodeValue write SetNodeValue;
     property NodeType: TNodeType read GetNodeType;
@@ -425,7 +452,6 @@ type
     // protected
     function GetLength: Integer;
     function GetItem(const Index: Integer): IXMLNode;
-    procedure MakeChildrenCacheSiblings(const Value: boolean);
     // public
     property Item[const Index: Integer]: IXMLNode read GetItem;
     property Length: Integer read GetLength;
@@ -603,13 +629,11 @@ type
     FLinePos: Integer;
     FReason: string;
     FSrcText: XmlString;
-    FSrcTextPos: Integer;
     FURL: string;
     function GetErrorCode: Integer;
     function GetFilePos: Integer;
     function GetLine: Integer;
     function GetLinePos: Integer;
-    function GetSrcTextPos: Integer;
     function GetReason: string;
     function GetSrcText: XmlString;
     function GetURL: string;
@@ -619,16 +643,16 @@ type
     procedure SetLine(const Line: Integer);
     procedure SetLinePos(const LinePos: Integer);
     procedure SetReason(const Reason: string);
-    procedure SetSrcText(const SrcTextBefore, SrcTextAfter: XmlString);
+    procedure SetSrcText(const SrcText: XmlString);
     procedure SetURL(const URL: string);
   public
+    destructor Destroy; override;
     property ErrorCode: Integer read GetErrorCode;
     property FilePos: Integer read GetFilePos;
     property Line: Integer read GetLine;
     property LinePos: Integer read GetLinePos;
     property Reason: string read GetReason;
     property SrcText: XmlString read GetSrcText;
-    property SrcTextPos: Integer read GetSrcTextPos;
     property URL: string read GetURL;
   end;
 
@@ -644,14 +668,12 @@ type
 
   TXMLNode = class(TInterfacedObject, IXMLNode)
   protected
-    {$IFDEF AUTOREFCOUNT} [weak] {$ENDIF} FOwnerDocument: TXMLDocument;
+    FOwnerDocument: TXMLDocument;
     FNodeType: TNodeType;
     FAttributes: IXMLNamedNodeMap;
     FChildNodes: IXMLNodeList;
     FParentNode: IXMLNode;
     FNodeValueId: TDicId;
-    FCachedNodeIndex:  integer;  // < 0 if non-cached hence unknown
-
     procedure ClearChildNodes;
     function HasAttributes: Boolean;
     function GetAttributes: IXMLNamedNodeMap;
@@ -666,6 +688,7 @@ type
     function GetParentNode: IXMLNode;
     function GetPreviousSibling: IXMLNode;
     procedure SetNodeValue(const Value: XmlString); virtual;
+    procedure InternalWrite(const Stream: TStream; Text: XmlString); virtual;
     procedure InternalWriteToStream(const OutputStream: IUnicodeStream); virtual;
     procedure ReadFromStream(const Parent: TXMLNode; const InputStream: IUnicodeStream); virtual;
     procedure SetParentNode(const Parent: IXMLNode);
@@ -674,8 +697,6 @@ type
     function GetXML: XmlString;
     procedure SelectNodes(Pattern: string; var Result: IXMLNodeList); overload; virtual;
     procedure SelectSingleNode(Pattern: string; var Result: IXMLNode); overload; virtual;
-
-    procedure SetCachedNodeIndex(const Index: integer);
   public
     Dictionary: TDictionary;
     property NodeName: XmlString read GetNodeName;
@@ -730,18 +751,11 @@ type
 
   TXMLCustomList = class(TInterfacedObject, IXMLCustomList)
   private
-    {$IFDEF OmniXML_Generics}
-    FList: TList<IXMLNode>;
-    {$ELSE}
-    FList: TList;
-    {$ENDIF}
-    FChildrenCachedSiblings: boolean;
+    FList: TInterfaceList;
   protected
     function GetLength: Integer;
     function GetItem(const Index: Integer): IXMLNode;
     procedure Put(Index: Integer; Item: IXMLNode);
-
-    procedure MakeChildrenCacheSiblings(const Value: boolean);
   public
     constructor Create;
     destructor Destroy; override;
@@ -968,6 +982,40 @@ type
     function LoadXML(const XML: XmlString): Boolean; virtual;
     property ParseError: IXMLParseError read GetParseError;
   end;
+
+type
+  TCodePage = record
+    CodePage: Word;
+    Alias: string;
+  end;
+  TCodePages = array[1..23] of TCodePage;
+
+const
+  CodePages: TCodePages = (
+    (CodePage:   932; Alias: 'shift-jis'),  // Japanese (Shift-JIS)
+    (CodePage: CP_UTF16; Alias: 'utf-16'),  // Central European Alphabet (Windows)
+    (CodePage:  1250; Alias: 'windows-1250'),  // Central European Alphabet (Windows)
+    (CodePage:  1251; Alias: 'windows-1251'),  // Cyrillic Alphabet (Windows)
+    (CodePage:  1252; Alias: 'windows-1252'),  // Western Alphabet
+    (CodePage:  1253; Alias: 'windows-1253'),  // Greek Alphabet (Windows)
+    (CodePage:  1254; Alias: 'windows-1254'),  // Turkish Alphabet
+    (CodePage:  1255; Alias: 'windows-1255'),  // Hebrew Alphabet (Windows)
+    (CodePage:  1256; Alias: 'windows-1256'),  // Arabic Alphabet (Windows)
+    (CodePage:  1257; Alias: 'windows-1257'),  // Baltic Alphabet (Windows)
+    (CodePage:  1258; Alias: 'windows-1258'),  // Vietnamese Alphabet (Windows)
+    (CodePage: ISO_8859_1; Alias: 'iso-8859-1'),  // Western Alphabet (ISO)
+    (CodePage: ISO_8859_2; Alias: 'iso-8859-2'),  // Central European Alphabet (ISO)
+    (CodePage: ISO_8859_3; Alias: 'iso-8859-3'),  // Latin 3 Alphabet (ISO)
+    (CodePage: ISO_8859_4; Alias: 'iso-8859-4'),  // Baltic Alphabet (ISO)
+    (CodePage: ISO_8859_5; Alias: 'iso-8859-5'),  // Cyrillic Alphabet (ISO)
+    (CodePage: ISO_8859_6; Alias: 'iso-8859-6'),  // Arabic Alphabet (ISO)
+    (CodePage: ISO_8859_7; Alias: 'iso-8859-7'),  // Greek Alphabet (ISO)
+    (CodePage: ISO_8859_8; Alias: 'iso-8859-8'),  // Hebrew Alphabet (ISO)
+    (CodePage: ISO_8859_9; Alias: 'iso-8859-9'),  // Turkish Alphabet (ISO)
+    (CodePage: 50220; Alias: 'iso-2022-jp'),  // Japanese (JIS)
+    (CodePage: 51932; Alias: 'euc-jp'),  // Japanese (EUC)
+    (CodePage: CP_UTF8; Alias: 'utf-8')  // Universal Alphabet (UTF-8)
+  );
 
 // helper functions
 function CreateXMLDoc: IXMLDocument;
@@ -1287,7 +1335,23 @@ begin
   Result := TXMLDocument.Create;
 end;
 
-function FindEncoding(const PI: IXMLProcessingInstruction; var OutEncoding: TEncoding): Boolean;
+function GetCodePage(const Alias: string; var CodePage: Word): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  i := Low(TCodePages);
+  while (not Result) and (i <= High(TCodePages)) do
+  begin
+    Result := CompareText(Alias, CodePages[i].Alias) = 0;
+    if Result then
+      CodePage := CodePages[i].CodePage
+    else
+      Inc(i);
+  end;
+end;
+
+function FindEncoding(const PI: IXMLProcessingInstruction; var CodePage: Word): Boolean;
 var
   EncodingStartPos,
   EncodingEndPos: Integer;
@@ -1295,7 +1359,6 @@ var
   Encoding: XmlString;
   DelimiterChar: XmlChar;
 begin
-  OutEncoding := nil;
   Result := False;
   if CompareText(PI.Target, 'xml') = 0 then
   begin
@@ -1314,7 +1377,7 @@ begin
         if EncodingEndPos > 0 then
         begin
           Encoding := Copy(PI.Data, EncodingStartPos, EncodingEndPos - EncodingStartPos - 1);
-          Result := TEncoding.EncodingFromAlias(Encoding, OutEncoding);
+          Result := GetCodePage(Encoding, CodePage);
         end;
       end;
     end;
@@ -1730,38 +1793,80 @@ begin
   FXMLCode := XMLCode;
 end;
 
+{$IFDEF LINUX}
+
+{ TUnicodeStream }
+
+constructor TUnicodeStream.Create(const OutputStream: TStream);
+begin
+  FOutputStream := OutputStream;
+end;
+
+function TUnicodeStream.Write(const Buffer; Count: Integer): Longint;
+begin
+  if FOutputStream <> nil then
+    Result := FOutputStream.Write(Buffer, Count)
+  else
+    Result := inherited Write(Buffer, Count);
+end;
+
+procedure TUnicodeStream.WriteString(const Value: XmlString);
+begin
+  if Value <> '' then
+    WriteBuffer(Value[1], Length(Value) * 2);
+end;
+
+{$ENDIF}
+
 { TXMLTextStream }
 
-constructor TXMLTextStream.Create(const Stream: TStream; const Mode: TStreamMode;
-  const Encoding: TEncoding; const WriteBOM: Boolean);
+constructor TXMLTextStream.Create(const Stream: TStream; const Mode: TStreamMode; const Encoding: Word);
+{$IFDEF MSWINDOWS}
+const
+  Modes: array[TStreamMode] of TGpTSAccess = (tsaccRead, tsaccWrite);
+{$ENDIF}
 begin
   FStreamMode := Mode;
+  {$IFDEF MSWINDOWS}
+  FXTS := TGpTextStream.Create(Stream, Modes[FStreamMode], [], Encoding);
+  {$ENDIF}
+  {$IFDEF LINUX}
   if FStreamMode = smRead then
   begin
-    FReader := TOTextReader.Create(Stream, Encoding);
-    fBOMFound := FReader.BOMFound;
+    FXTS := TUnicodeStream.Create(nil);
+    FXTS.CopyFrom(Stream, 0);
+    FXTS.Seek(0, soFromBeginning);
   end
   else
   begin
-    FWriter := TOTextWriter.Create(Stream, Encoding, WriteBOM);
+    FXTS := TUnicodeStream.Create(Stream);
+    { TODO -omr : writing HEADER_UTF16 should be deleted when Primoz add true codepage support }
+    FXTS.Write(HEADER_UTF16, SizeOf(HEADER_UTF16));
   end;
+  {$ENDIF}
 
   // set defaults
   FIndent := -1;
+  FLineStartPosition := FXTS.Position;
 
   // allocate initial output buffer
   FOutBufferSize := MAX_OUTPUTBUFFERSIZE;
   FOutBufferPos := -1;
   GetMem(FOutBuffer, FOutBufferSize * SizeOf(XmlChar));
+
+  {$IFDEF MSWINDOWS}
+  // store Mode and prefetch Size
+  FMode := Modes[FStreamMode];
+  if FMode = tsaccRead then
+    FSize := FXTS.Size;
+  {$ENDIF}
 end;
 
 destructor TXMLTextStream.Destroy;
 begin
   FreeMem(FOutBuffer, FOutBufferSize * SizeOf(XmlChar));
-
-  FreeAndNil(FReader);
-  FreeAndNil(FWriter);
-
+//  if FStreamMode = smRead then
+    FreeAndNil(FXTS);
   inherited;
 end;
 
@@ -1780,25 +1885,21 @@ begin
   FOutputFormat := Value;
 end;
 
-function TXMLTextStream.GetBOMFound: Boolean;
+function TXMLTextStream.GetCodePage: Word;
 begin
-  Result := fBOMFound;
+  {$IFDEF MSWINDOWS}
+  Result := FXTS.Codepage;
+  {$ENDIF}
+  {$IFDEF LINUX}
+  Result := CP_UNICODE;
+  {$ENDIF}
 end;
 
-function TXMLTextStream.GetEncoding: TEncoding;
+procedure TXMLTextStream.SetCodePage(const CodePage: Word);
 begin
-  if FStreamMode = smRead then
-    Result := FReader.Encoding
-  else
-    Result := FWriter.Encoding;
-end;
-
-procedure TXMLTextStream.SetEncoding(const AEncoding: TEncoding);
-begin
-  if FStreamMode = smRead then
-    FReader.Encoding := AEncoding
-  else
-    FWriter.Encoding := AEncoding
+  {$IFDEF MSWINDOWS}
+  FXTS.Codepage := CodePage;
+  {$ENDIF}
 end;
 
 function TXMLTextStream.GetNextString(var ReadString: XmlString; const Len: Integer): Boolean;
@@ -1823,20 +1924,51 @@ begin
   ClearOutputBuffer;  // do not remove this call!
 end;
 
+function TXMLTextStream.GetPreviousChar: XmlChar;
+begin
+  if FCanUndo then
+    Result := FPreviousChar
+  else
+    raise EXMLException.CreateParseError(INVALID_CHARACTER_ERR, MSG_E_INTERNALERROR, ['Only one undo level is supported']);
+
+  FCanUndo := False;
+end;
+
 function TXMLTextStream.ReadChar(var ReadChar: XmlChar): Boolean;
 begin
-  Result := FReader.ReadNextChar(ReadChar);
+  if FReadFromUndo then
+  begin
+    ReadChar := PreviousChar;
+    FReadFromUndo := False;
+    Result := True;
+  end
+  else
+  begin
+    // we always expect WideChar (with length=2)
+    Result := FXTS.Read(ReadChar, 2) > 0;
+    FCanUndo := True;
+    FPreviousChar := ReadChar;
+  end;
 end;
 
 function TXMLTextStream.ProcessChar(var ch: XmlChar): Boolean;
 begin
   Result := ReadChar(ch);
+
+  Inc(FLinePos);
+  // 2003-02-24 (mr): fixed bug (corrected #$0010 to #$000A)
+  if ch = #$000A then
+  begin
+    Inc(FLine);
+    FLinePos := 0;
+    FLineStartPosition := FXTS.Position;
+  end;
 end;
 
 procedure TXMLTextStream.UndoRead;
 begin
   // next char will be from the undo buffer
-  FReader.UndoRead;
+  FReadFromUndo := True;
 end;
 
 procedure TXMLTextStream.WriteOutputChar(const OutChar: XmlChar);
@@ -1853,9 +1985,9 @@ begin
   FOutBuffer[FOutBufferPos] := OutChar;
 end;
 
-procedure TXMLTextStream.WriteString(const Value: XmlString);
+procedure TXMLTextStream.WriteString(Value: XmlString);
 begin
-  FWriter.WriteString(Value);
+  FXTS.WriteString(Value);
 end;
 
 procedure TXMLTextStream.IncreaseIndent;
@@ -1879,10 +2011,10 @@ begin
 
   // 2002-12-17 (mr): added ForceNextLine
   if (FIndent > 0) or ForceNextLine then
-    FWriter.WriteString(#13#10);
+    FXTS.WriteString(#13#10);
 
   if (FOutputFormat = ofIndent) and (FIndent < MaxInt) and (FIndent > 0) then
-    FWriter.WriteString(StringOfChar(' ', FIndent * OUTPUT_INDENT));
+    FXTS.WriteString(StringOfChar(' ', FIndent * OUTPUT_INDENT));
 end;
 
 function TXMLTextStream.OutputBufferLen: Integer;
@@ -1890,12 +2022,41 @@ begin
   Result := FOutBufferPos + 1;
 end;
 
+function TXMLTextStream.GetPosition: Integer;
+begin
+  if FReadFromUndo then
+    Result := FXTS.Position - 1
+  else
+    Result := FXTS.Position;
+end;
+
 function TXMLTextStream.GetPreviousOutputBuffer: XmlString;
 begin
   Result := FPreviousOutBuffer;
 end;
 
+function TXMLTextStream.GetLastLine: XmlString;
+var
+  CurrentPos: Integer;
+begin
+  CurrentPos := FXTS.Position;
+  FXTS.Seek(FLineStartPosition, soFromBeginning);
+  if CurrentPos - FLineStartPosition > 0 then
+  begin
+    SetLength(Result, FLinePos);
+    FXTS.Read(Result[1], FLinePos * 2);
+  end
+  else
+    Result := '';
+end;
+
 { TXMLParseError }
+
+destructor TXMLParseError.Destroy;
+begin
+  inherited;
+  //
+end;
 
 function TXMLParseError.GetErrorCode: Integer;
 begin
@@ -1925,11 +2086,6 @@ end;
 function TXMLParseError.GetSrcText: XmlString;
 begin
   Result := FSrcText;
-end;
-
-function TXMLParseError.GetSrcTextPos: Integer;
-begin
-  Result := FSrcTextPos;
 end;
 
 function TXMLParseError.GetURL: string;
@@ -1962,10 +2118,9 @@ begin
   FReason := Reason;
 end;
 
-procedure TXMLParseError.SetSrcText(const SrcTextBefore, SrcTextAfter: XmlString);
+procedure TXMLParseError.SetSrcText(const SrcText: XmlString);
 begin
-  FSrcText := SrcTextBefore+SrcTextAfter;
-  FSrcTextPos := Length(SrcTextBefore);
+  FSrcText := SrcText;
 end;
 
 procedure TXMLParseError.SetURL(const URL: string);
@@ -1975,70 +2130,20 @@ end;
 
 { TXMLCustomList }
 
-type TNotifyingList = class({$IFDEF OmniXML_Generics}TList<IXMLNode>{$Else}TList{$EndIf})
-   private
-     {$IFDEF AUTOREFCOUNT} [weak] {$ENDIF} Owner: TXMLCustomList;
-   protected
-{$IfDef OmniXML_Generics}
-     procedure Notify(const Item: IXMLNode; Action: TCollectionNotification); override;
-{$Else}
-     procedure Notify(Ptr: Pointer; Action: TListNotification); override;
-{$EndIf}
-end;
-
-{$IFDEF OmniXML_Generics}
-procedure TNotifyingList.Notify(const Item: IXMLNode; Action: TCollectionNotification);
-{$Else}
-procedure TNotifyingList.Notify(Ptr: Pointer; Action: TListNotification);
-{$EndIf}
-begin
-  // for preformance reasons we would not call inherited function here
-  // 1) non-generic TList.Notify is empty anywhere
-  // 2) generic TList<T>.Notify merely checks event property and possibly calls
-  //         it, which implies extra redirection and AddRef/Release calls
-  //         And yet again, we do not use that event.
-
-  if Count > 0 then
-     if Owner <> nil then
-        if Owner.FChildrenCachedSiblings then
-           Owner.MakeChildrenCacheSiblings( False );
-end;
-
 constructor TXMLCustomList.Create;
 begin
-  FList := TNotifyingList.Create;
-  TNotifyingList(FList).Owner := Self;
+  FList := TInterfaceList.Create;
 end;
 
 destructor TXMLCustomList.Destroy;
 begin
-  if GetLength > 0 then
-     MakeChildrenCacheSiblings(False);
-  if FList <> nil then
-     (FList as TNotifyingList).Owner := nil;
-  Clear;
   FList.Free;
   inherited;
 end;
 
-procedure TXMLCustomList.MakeChildrenCacheSiblings(const Value: boolean);
-var i, l: integer;
-begin
-  if Value
-     then l := 0   // all bits clear
-     else l := -1; // all bits set!
-  for i := 0 to GetLength - 1 do
-      GetItem(i).SetCachedNodeIndex( i or l );
-  FChildrenCachedSiblings := Value;
-end;
-
 function TXMLCustomList.GetItem(const Index: Integer): IXMLNode;
 begin
-  {$IFDEF OmniXML_Generics}
-  Result := FList.Items[Index];
-  {$ELSE}
-  Result := IInterface(FList.Items[Index]) as IXMLNode;
-  {$ENDIF}
+  Result := FList.Items[Index] as IXMLNode;
 end;
 
 function TXMLCustomList.GetLength: Integer;
@@ -2048,78 +2153,38 @@ end;
 
 function TXMLCustomList.Add(const XMLNode: IXMLNode): Integer;
 begin
-  {$IFDEF OmniXML_Generics}
-  Result := FList.Add(XMLNode);
-  {$ELSE}
-  Result := FList.Add(Pointer(XMLNode));
-  XMLNode._AddRef;
-  {$ENDIF}
+  Result := FList.Add(XMLNode as IXMLNode);
 end;
 
 function TXMLCustomList.Remove(const XMLNode: IXMLNode): Integer;
 begin
-  {$IFDEF OmniXML_Generics}
-  Result := FList.Remove(XMLNode);
-  {$ELSE}
-  Result := FList.Remove(Pointer(XMLNode));
-  XMLNode._Release;
-  {$ENDIF}
+  Result := FList.Remove(XMLNode as IXMLNode);
 end;
 
 procedure TXMLCustomList.Put(Index: Integer; Item: IXMLNode);
 begin
-  {$IFDEF OmniXML_Generics}
-  FList[Index] := Item;
-  {$ELSE}
-  if Assigned(FList[Index]) then
-    IInterface(FList[Index])._Release;
-  FList[Index] := Pointer(Item as IXMLNode);
-  Item._AddRef;
-  {$ENDIF}
+  FList[Index] := Item as IXMLNode;
 end;
 
 function TXMLCustomList.IndexOf(const XMLNode: IXMLNode): Integer;
 begin
-  {$IFDEF OmniXML_Generics}
-  Result := FList.IndexOf(XMLNode);
-  {$ELSE}
-  Result := FList.IndexOf(Pointer(XMLNode));
-  {$ENDIF}
+  Result := FList.IndexOf(XMLNode as IXMLNode);
 end;
 
 procedure TXMLCustomList.Insert(const Index: Integer; const XMLNode: IXMLNode);
 begin
-  {$IFDEF OmniXML_Generics}
-  FList.Insert(Index, XMLNode);
-  {$ELSE}
-  FList.Insert(Index, Pointer(XMLNode));
-  XMLNode._AddRef;
-  {$ENDIF}
+  FList.Insert(Index, XMLNode as IXMLNode);
 end;
 
 procedure TXMLCustomList.Delete(const Index: Integer);
 begin
-  if Index < FList.Count then begin
-    {$IFNDEF OmniXML_Generics}
-    (IInterface(FList[Index]) as IXMLNode)._Release;
-    {$ENDIF}
-    FList.Delete(Index);
-  end;
+  FList.Delete(Index);
 end;
 
 procedure TXMLCustomList.Clear;
-{$IFNDEF OmniXML_Generics}
-var I: Integer;
-begin
-  for I := 0 to FList.Count-1 do
-    (IInterface(FList[I]) as IXMLNode)._Release;
-  FList.Clear;
-end;
-{$ELSE}
 begin
   FList.Clear;
 end;
-{$ENDIF}
 
 { TXMLNodeList }
 
@@ -2193,7 +2258,6 @@ begin
   FChildNodes := nil;
   FAttributes := nil;
   FNodeValueId := CInvalidDicId;
-  FCachedNodeIndex := -1;
 
   Dictionary := FOwnerDocument.Dictionary;
 end;
@@ -2337,73 +2401,44 @@ begin
 end;
 
 function TXMLNode.GetPreviousSibling: IXMLNode;
-var ns: IXMLNodeList;
-begin
-  Result := nil;
-  if (FParentNode <> nil) and (FParentNode.HasChildNodes) then
+  function FindPreviousNode(const Self: IXMLNode): IXMLNode;
+  var
+    Childs: IXMLNodeList;
+    Index: Integer;
   begin
-    ns := FParentNode.ChildNodes;
-    if FCachedNodeIndex < 0 then
-          ns.MakeChildrenCacheSiblings(True);
-    if FCachedNodeIndex > 0 then
-       Result := ns.Item[FCachedNodeIndex-1];
+    Childs := FParentNode.ChildNodes;
+    Index := Childs.IndexOf(Self);
+    if (Index >= 0) and ((Index - 1) >= 0) then
+      Result := Childs.Item[Index - 1]
+    else
+      Result := nil;
   end;
+begin
+  if (FParentNode <> nil) and (FParentNode.HasChildNodes) then
+    Result := FindPreviousNode(Self as IXMLNode)
+  else
+    Result := nil;
 end;
 
 function TXMLNode.GetNextSibling: IXMLNode;
-var ns: IXMLNodeList; next_id: integer;
-begin
-  Result := nil;
-  if (FParentNode <> nil) and (FParentNode.HasChildNodes) then
+  function FindNextNode(const Self: IXMLNode): IXMLNode;
+  var
+    Childs: IXMLNodeList;
+    Index: Integer;
   begin
-    ns := FParentNode.ChildNodes;
-    if FCachedNodeIndex < 0 then
-          ns.MakeChildrenCacheSiblings(True);
-    next_id := FCachedNodeIndex + 1;
-    if next_id < ns.Length then
-       Result := ns.Item[next_id];
+    Childs := FParentNode.ChildNodes;
+    Index := Childs.IndexOf(Self);
+    if (Index >= 0) and ((Index + 1) < Childs.Length) then
+      Result := Childs.Item[Index + 1]
+    else
+      Result := nil;
   end;
+begin
+  if (FParentNode <> nil) and (FParentNode.HasChildNodes) then
+    Result := FindNextNode(Self as IXMLNode)
+  else
+    Result := nil;
 end;
-
-//function TXMLNode.GetPreviousSibling: IXMLNode;
-//  function FindPreviousNode(const Self: IXMLNode): IXMLNode;
-//  var
-//    Childs: IXMLNodeList;
-//    Index: Integer;
-//  begin
-//    Childs := FParentNode.ChildNodes;
-//    Index := Childs.IndexOf(Self);
-//    if (Index >= 0) and ((Index - 1) >= 0) then
-//      Result := Childs.Item[Index - 1]
-//    else
-//      Result := nil;
-//  end;
-//begin
-//  if (FParentNode <> nil) and (FParentNode.HasChildNodes) then
-//    Result := FindPreviousNode(Self as IXMLNode)
-//  else
-//    Result := nil;
-//end;
-//
-//function TXMLNode.GetNextSibling: IXMLNode;
-//  function FindNextNode(const Self: IXMLNode): IXMLNode;
-//  var
-//    Childs: IXMLNodeList;
-//    Index: Integer;
-//  begin
-//    Childs := FParentNode.ChildNodes;
-//    Index := Childs.IndexOf(Self);
-//    if (Index >= 0) and ((Index + 1) < Childs.Length) then
-//      Result := Childs.Item[Index + 1]
-//    else
-//      Result := nil;
-//  end;
-//begin
-//  if (FParentNode <> nil) and (FParentNode.HasChildNodes) then
-//    Result := FindNextNode(Self as IXMLNode)
-//  else
-//    Result := nil;
-//end;
 
 function TXMLNode.HasChildNodes: Boolean;
 begin
@@ -2520,23 +2555,26 @@ begin
   InternalWriteToStream(OutputStream);
 end;
 
+procedure TXMLNode.InternalWrite(const Stream: TStream; Text: XmlString);
+begin
+  Stream.WriteBuffer(Text[1], Length(Text) * 2);
+end;
+
 function TXMLNode.GetXML: XmlString;
 var
   Stream: TMemoryStream;
   US: IUnicodeStream;
 begin
-  US := nil;
   Stream := TMemoryStream.Create;
   try
-    US := TXMLTextStream.Create(Stream, smWrite, TEncoding.OWideStringEncoding, False);
-
-    InternalWriteToStream(US);
-    US := nil;//(op) MUST BE HERE -> FLUSH BUFFER
-    SetLength(Result, Stream.Size div SizeOf(XmlChar));
-    if Stream.Size > 0 then
-    begin
-      Stream.Position := 0;
-      Stream.ReadBuffer(PXmlChar(Result)^, Stream.Size);
+    US := TXMLTextStream.Create(Stream, smWrite, CP_UTF16);
+    try
+      InternalWriteToStream(US);
+      SetLength(Result, (Stream.Size - SizeOf(XmlChar)) div 2);
+      Stream.Seek(SizeOf(XmlChar), soFromBeginning);
+      Stream.Read(PXmlChar(Result)^, Stream.Size - SizeOf(XmlChar));
+    finally
+      US := nil;
     end;
   finally
     Stream.Free;
@@ -2607,13 +2645,6 @@ end;
 function TXMLNode.SelectSingleNode(Pattern: string): IXMLNode;
 begin
   SelectSingleNode(Pattern, Result);
-end;
-
-procedure TXMLNode.SetCachedNodeIndex(const Index: integer);
-begin
-  if Index >= 0
-     then FCachedNodeIndex := Index
-     else FCachedNodeIndex := -1;
 end;
 
 { TODO -omr : re-add after IXMLDocumentType will be properly supported }
@@ -2840,7 +2871,6 @@ begin
               InputStream.WriteOutputChar(ReadChar);
               _nodeAttr := FOwnerDocument.InternalCreateAttribute('');
               Attributes.SetNamedItem(_nodeAttr);
-              _nodeAttr.SetParentNode( Self );
               _nodeAttr.ReadFromStream(Self, InputStream);
             end
             else
@@ -2907,7 +2937,7 @@ type
 var
   ReadChar: XmlChar;
   PState: TParserState;
-  Encoding: TEncoding;
+  CodePage: Word;
   _xmlDoc: IXMLDocument;
 begin
   // [16] PI ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
@@ -2965,17 +2995,8 @@ begin
           if ReadChar = '>' then
           begin
             SetData(InputStream.GetOutputBuffer);
-            if not InputStream.BOMFound and FindEncoding(Self, Encoding) then//(op): DO NOT CHANGE ENCODING IF BOM WAS FOUND!!!
-            begin
-              if (InputStream.Encoding.EncodingCodePage <> Encoding.EncodingCodePage) then
-              begin
-                InputStream.Encoding := Encoding;
-                FOwnerDocument.ClearChildNodes;
-              end
-              else
-              if Assigned(Encoding) and not TEncoding.IsStandardEncoding(Encoding) then
-              Encoding.Free;
-            end;
+            if FindEncoding(Self, CodePage) then
+              InputStream.CodePage := CodePage;
             Exit;
           end
           else
@@ -3749,12 +3770,10 @@ end;
 function TXMLDocument.LoadXML(const XML: XmlString): Boolean;
 var
   Stream: TMemoryStream;
-  BOM: TEncodingBuffer;
 begin
   Stream := TMemoryStream.Create;
   try
-    BOM := TEncoding.OWideStringEncoding.GetBOM;
-    Stream.Write(BOM[TEncodingBuffer_FirstElement], Length(BOM));
+    Stream.Write(HEADER_UTF16, SizeOf(HEADER_UTF16));
     Stream.Write(PXmlChar(XML)^, Length(XML) * SizeOf(XmlChar));
     Stream.Seek(0, soFromBeginning);
     Result := LoadFromStream(Stream);
@@ -3780,7 +3799,6 @@ end;
 function TXMLDocument.LoadFromStream(const Stream: TStream): Boolean;
 var
   XTS: TXMLTextStream;
-  xPreviousText, xNextText: XmlString;
 
   function GetUnclosedTags: XmlString;
   begin
@@ -3797,8 +3815,7 @@ begin
   Result := True;
   ClearChildNodes;
 
-  Stream.Position := 0;
-  XTS := TXMLTextStream.Create(Stream, smRead, TEncoding.UTF8, False);
+  XTS := TXMLTextStream.Create(Stream, smRead, CP_UTF8);
   try
     try
       UnclosedElementList.Clear;
@@ -3812,17 +3829,22 @@ begin
       begin
         if E is EXMLException then
         begin
-          FParseError.SetErrorCode(EXMLException(E).XMLCode);
-          FParseError.SetFilePos(XTS.FReader.FilePosition);
-          FParseError.SetLine(XTS.FReader.Line);
-          FParseError.SetLinePos(XTS.FReader.LinePosition);
-          FParseError.SetReason(E.Message);
-          xPreviousText := XTS.FReader.ReadPreviousString(30, True);
-          xNextText := XTS.FReader.ReadString(10, True);
-          FParseError.SetSrcText(xPreviousText, xNextText);//do not write ReadPreviousStringInLine() and ReadString() directly here because due to some Delphi optimizations, ReadString would be called first
-          FParseError.SetURL(Self.FURL);
-
-          ClearChildNodes;
+          with FParseError do
+          begin
+            SetErrorCode(EXMLException(E).XMLCode);
+            SetFilePos(XTS.GetPosition);
+            SetLine(XTS.FLine + 1);
+            SetLinePos(XTS.FLinePos);
+            SetReason(E.Message);
+            SetSrcText(XTS.GetLastLine);
+            if SrcText = '' then
+              // try to get source text from previously completed buffer
+              SetSrcText(XTS.GetPreviousOutputBuffer);
+            if SrcText = '' then
+              // try to get source text from previously read character
+              SetSrcText(XTS.PreviousChar);
+            SetURL(Self.FURL);
+          end;
           Result := False;
         end
         else
@@ -3857,28 +3879,8 @@ end;
 procedure TXMLDocument.SaveToStream(const OutputStream: TStream; const OutputFormat: TOutputFormat);
 var
   US: TXMLTextStream;
-
-  function InternalFindEncoding: TEncoding;
-  var
-    i: Integer;
-    TempPI, PI: IXMLProcessingInstruction;
-    Encoding: TEncoding;
-  begin
-    Result := TEncoding.UTF8;
-    if HasChildNodes then
-    begin
-      // find last processing instruction
-      for i := 0 to ChildNodes.Length - 1 do
-      begin
-        if Supports(ChildNodes.Item[i], IXMLProcessingInstruction, TempPI) then
-          PI := TempPI;
-      end;
-    end;
-    if (PI <> nil) and FindEncoding(PI, Encoding) then
-      Result := Encoding;
-  end;
 begin
-  US := TXMLTextStream.Create(OutputStream, smWrite, InternalFindEncoding, True);
+  US := TXMLTextStream.Create(OutputStream, smWrite, CP_UTF8);
   try
     US.OutputFormat := OutputFormat;
     InternalWriteToStream(US);

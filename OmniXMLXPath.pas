@@ -2,17 +2,15 @@
    Based on XPath tutorial from http://www.w3schools.com/xpath/default.asp.
    @author Primoz Gabrijelcic
    @desc <pre>
-   (c) 2015 Primoz Gabrijelcic
+   (c) 2011 Primoz Gabrijelcic
    Free for personal and commercial use. No rights reserved.
 
    Author            : Primoz Gabrijelcic
    Creation date     : 2005-10-28
-   Last modification : 2015-07-27
-   Version           : 1.04
+   Last modification : 2011-08-30
+   Version           : 1.03
 </pre>*)(*
    History:
-     1.04: Improved filter processor to support consecutive filters, such as:
-           /SubtitlerStatusInfo/Status/Decoders/Item[Index="1"][Initialized="yes"][InputPresent="yes"]
      1.03: 2011-08-30
        - Added support for the '..' element.
      1.02: 2010-07-06
@@ -38,19 +36,10 @@ unit OmniXMLXPath;
 
 interface
 
-{$I OmniXML.inc}
-
-{$IFDEF OmniXML_HasZeroBasedStrings}
-  {$ZEROBASEDSTRINGS OFF}
-{$ENDIF}
-
 uses
-  {$IFDEF OmniXML_Namespaces}
-  System.SysUtils,
-  {$ELSE}
   SysUtils,
-  {$ENDIF}
-  OmniXML_Types, OmniXML;
+  OmniXML_Types,
+  OmniXML;
 
 type
   {:Exceptions raised on invalid XPath expressions.
@@ -134,7 +123,7 @@ type
     procedure EvaluatePart(startList: IXMLNodeList; const element, predicate: XmlString;
       flags: TXMLXPathElementFlags; endList: IXMLNodeList);
     procedure FilterByAttrib(startList: IXMLNodeList; const attribName, attribValue:
-      XmlString; const NotEQ: boolean; endList: IXMLNodeList);
+      XmlString; endList: IXMLNodeList);
     procedure FilterByChild(startList: IXMLNodeList; const childName,
       childValue: XmlString; endList: IXMLNodeList);
     procedure FilterNodes(startList: IXMLNodeList; const predicate: XmlString;
@@ -265,10 +254,8 @@ begin
     if (element <> '') and (element[1] = '@') then
       CollectChildNodes(node, Copy(element, 2, Length(element)-1), ATTRIBUTE_NODE,
         pefScanTree in flags, tempList)
-    else if element <> '' then
-      CollectChildNodes(node, element, ELEMENT_NODE, pefScanTree in flags, tempList)
     else
-      tempList.Add(node);
+      CollectChildNodes(node, element, ELEMENT_NODE, pefScanTree in flags, tempList);
     FilterNodes(tempList, predicate, endList);
   end;
 end; { TXMLXPathEvaluator.EvaluateNode }
@@ -291,7 +278,7 @@ end; { TXMLXPathEvaluator.EvaluatePart }
   @since   2005-10-28
 }
 procedure TXMLXPathEvaluator.FilterByAttrib(startList: IXMLNodeList; const attribName,
-  attribValue: XmlString;  const NotEQ: boolean; endList: IXMLNodeList);
+  attribValue: XmlString; endList: IXMLNodeList);
 var
   attrNode     : IXMLNode;
   iNode        : integer;
@@ -300,7 +287,7 @@ begin
   matchAnyValue := (attribValue = '*');
   for iNode := 0 to startList.Length-1 do begin
     attrNode := startList.Item[iNode].Attributes.GetNamedItem(attribName);
-    if assigned(attrNode) and (matchAnyValue or ((attrNode.NodeValue = attribValue) xor NotEQ )) then
+    if assigned(attrNode) and (matchAnyValue or (attrNode.NodeValue = attribValue)) then
       endList.Add(startList.Item[iNode]);
   end;
 end; { TXMLXPathEvaluator.FilterByAttrib }
@@ -376,9 +363,9 @@ begin
     else begin
       SplitExpression(Copy(predicate, 2, Length(predicate)-1), left, op, right);
       if op = '' then // [@attrib]
-        FilterByAttrib(startList, left, '*', false, endList)
-      else if (op = '=') or (op = '!=') then // [@attrib='x']
-        FilterByAttrib(startList, left, right, op = '!=', endList)
+        FilterByAttrib(startList, left, '*', endList)
+      else if op = '=' then // [@attrib='x']
+        FilterByAttrib(startList, left, right, endList)
       else
         raise EXMLXPath.CreateFmt('Unsupported operator [%s]', [predicate]);
     end;
@@ -392,9 +379,8 @@ end; { TXMLXPathEvaluator.FilterNodes }
 function TXMLXPathEvaluator.GetNextExpressionPart(var element, predicate: XmlString;
   var flags: TXMLXPathElementFlags): boolean;
 var
-  endElement   : integer;
-  pEndPredicate: integer;
-  pPredicate   : integer;
+  endElement: integer;
+  pPredicate: integer;
 begin
   if FPosExpression > Length(FExpression) then
     Result := false
@@ -413,23 +399,19 @@ begin
     element := Copy(FExpression, FPosExpression, endElement - FPosExpression);
     FPosExpression := endElement;
     if element = '' then
-      raise EXMLXPath.CreateFmt('Empty element at position %d', [FPosExpression]);
+      raise EXMLXPath.CreateFmt('Empty element at position %d',
+        [FPosExpression]);
     pPredicate := Pos('[', element);
     if pPredicate = 0 then begin
       if Pos(']', element) > 0 then
-        raise EXMLXPath.CreateFmt('Invalid syntax at position %d', [Pos(']', element)]);
+        raise EXMLXPath.CreateFmt('Invalid syntax at position %d',
+          [Pos(']', element)]);
       predicate := '';
     end
     else begin
       if Copy(element, Length(element), 1) <> ']' then
         raise EXMLXPath.CreateFmt('Invalid syntax at position %d',
-                [FPosExpression + Length(element) - 1]);
-      pEndPredicate := Pos(']', element);
-      if pEndPredicate < Length(element) then begin
-        //extract only the first filter
-        Dec(FPosExpression, Length(element) - pEndPredicate);
-        element := Copy(element, 1, pEndPredicate);
-      end;
+          [FPosExpression + Length(element) - 1]);
       predicate := Copy(element, pPredicate+1, Length(element)-pPredicate-1);
       Delete(element, pPredicate, Length(element)-pPredicate+1);
     end;                                                                    
@@ -467,7 +449,7 @@ end; { TXMLXPathEvaluator.PosEx }
 procedure TXMLXPathEvaluator.SplitExpression(const predicate: XmlString; var left, op,
   right: XmlString);
 var
-  pOp, pOpLen: integer;
+  pOp: integer;
 begin
   pOp := Pos('=', predicate);
   if pOp = 0 then begin
@@ -476,17 +458,9 @@ begin
     right := '';
   end
   else begin
-    pOpLen := 1;
-    if pOp > 1 then  // != operator ???
-       if predicate[pOp-1] = '!' then begin
-          Inc(pOpLen);
-          Dec(pOp);
-       end;
-
     left := Trim(Copy(predicate, 1, pOp-1));
-    // op := predicate[pOp];
-    op := Copy(predicate, pOp, pOpLen);
-    right := Trim(Copy(predicate, pOp+pOpLen, Length(predicate)));
+    op := predicate[pOp];
+    right := Trim(Copy(predicate, pOp+1, Length(predicate)-pOp));
     if (right[1] = '''') and (right[Length(right)] = '''') then
       right := Copy(right, 2, Length(right)-2)
     else if (right[1] = '"') and (right[Length(right)] = '"') then

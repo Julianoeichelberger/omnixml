@@ -85,11 +85,6 @@ interface
 
 {$I OmniXML.inc}
 
-{$IFDEF OmniXML_HasZeroBasedStrings}
-  {$ZEROBASEDSTRINGS OFF}
-{$ENDIF}
-
-
 uses
 {$IFDEF MSWINDOWS}
   Windows,
