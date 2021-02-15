@@ -72,6 +72,9 @@ const
   // notation node
   NOTATION_NODE = 12;
 
+  CP_UTF16 = CP_UNICODE;
+
+
 type
   TNodeType = 1..12;
 

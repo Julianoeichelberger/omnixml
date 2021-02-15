@@ -1,30 +1,25 @@
-(*******************************************************************************
-* The contents of this file are subject to the Mozilla Public License Version  *
-* 1.1 (the "License"); you may not use this file except in compliance with the *
-* License. You may obtain a copy of the License at http://www.mozilla.org/MPL/ *
-*                                                                              *
-* Software distributed under the License is distributed on an "AS IS" basis,   *
-* WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License for *
-* the specific language governing rights and limitations under the License.    *
-*                                                                              *
-* The Original Code is mr_Storage_XML.pas                                      *
-*                                                                              *
-* The Initial Developer of the Original Code is Miha Remec,                    *
-*   http://www.MihaRemec.com/                                                  *
-*                                                                              *
-* Contributor(s):                                                              *
-*   Miha Vrhovnik, Primoz Gabrijelcic, John                                    *
-*******************************************************************************)
+﻿(* ******************************************************************************
+  * The contents of this file are subject to the Mozilla Public License Version  *
+  * 1.1 (the "License"); you may not use this file except in compliance with the *
+  * License. You may obtain a copy of the License at http://www.mozilla.org/MPL/ *
+  *                                                                              *
+  * Software distributed under the License is distributed on an "AS IS" basis,   *
+  * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License for *
+  * the specific language governing rights and limitations under the License.    *
+  *                                                                              *
+  * The Original Code is mr_Storage_XML.pas                                      *
+  *                                                                              *
+  * The Initial Developer of the Original Code is Miha Remec,                    *
+  *   http://www.MihaRemec.com/                                                  *
+  *                                                                              *
+  * Contributor(s):                                                              *
+  *   Miha Vrhovnik, Primoz Gabrijelcic, John                                    *
+  ****************************************************************************** *)
 unit OmniXMLPersistent;
 
 interface
 
 {$I OmniXML.inc}
-
-{$IFDEF OmniXML_HasZeroBasedStrings}
-  {$ZEROBASEDSTRINGS OFF}
-{$ENDIF}
-
 // if you want to use MS XML parser, uncomment (in your program!!!)
 // the following compiler directive {.$DEFINE USE_MSXML}
 
@@ -33,9 +28,9 @@ uses
 {$IFDEF VCL} Controls, {$ENDIF}
   TypInfo,
 {$IFDEF HAS_UNIT_VARIANTS} Variants, {$ENDIF}
-  OEncoding, OmniXML, OmniXML_Types,
+  OmniXML, OmniXML_Types,
 {$IFDEF USE_MSXML} OmniXML_MSXML, {$ENDIF}
-  OmniXMLUtils;
+  OmniXMLUtils, System.Rtti;
 
 type
   TPropsFormat = (pfAuto, pfAttributes, pfNodes);
@@ -50,36 +45,51 @@ type
   TOmniXMLWriter = class
   protected
     Doc: IXMLDocument;
-    procedure WriteProperty(Instance: TPersistent; PropInfo: PPropInfo;
-      Element: IXMLElement; WriteDefaultValues: Boolean);
+    procedure WriteProperty(Instance: TPersistent; PropInfo: PPropInfo; Element: IXMLElement; WriteDefaultValues: Boolean);
     procedure InternalWriteText(Root: IXMLElement; Name, Value: XmlString);
     procedure WriteCollection(Collection: TCollection; Root: IXMLElement);
   public
     PropsFormat: TPropsFormat;
     constructor Create(Doc: IXMLDocument; const PropFormat: TPropsFormat = pfAuto);
-    class procedure SaveToFile(const Instance: TPersistent; const FileName: string;
-      const PropFormat: TPropsFormat = pfAuto; const OutputFormat: TOutputFormat = ofNone);
-    class procedure SaveXML(const Instance: TPersistent; var XML: XmlString;
-      const PropFormat: TPropsFormat = pfAuto; const OutputFormat: TOutputFormat = ofNone);
-    procedure Write(Instance: TPersistent; Root: IXMLElement;
-      const WriteRoot: Boolean = True; const CheckIfEmpty: Boolean = True;
+    class procedure SaveToFile(const Instance: TPersistent; const FileName: string; const PropFormat: TPropsFormat = pfAuto;
+      const OutputFormat: TOutputFormat = ofNone);
+    class procedure SaveXML(const Instance: TPersistent; var XML: XmlString; const PropFormat: TPropsFormat = pfAuto;
+      const OutputFormat: TOutputFormat = ofNone);
+    procedure Write(Instance: TPersistent; Root: IXMLElement; const WriteRoot: Boolean = True; const CheckIfEmpty: Boolean = True;
       const WriteDefaultValues: Boolean = False);
   end;
 
   TOmniXMLReader = class
   protected
-    function FindElement(const Root: IXMLElement; const TagName: XmlString): IXMLElement;
-    procedure ReadProperty(Instance: TPersistent; PropInfo: Pointer; Element: IXMLElement);
+    procedure ReadProperty(Instance: TPersistent; PropInfo: Pointer; Element: IXMLElement; ThemeFile: string; DesignMode: Boolean;
+      Parent: TWinControl);
     function InternalReadText(Root: IXMLElement; Name: XmlString; var Value: XmlString): Boolean;
     procedure ReadCollection(Collection: TCollection; Root: IXMLElement);
   public
     PropsFormat: TPropsFormat;
+    Log: TStringList;
     constructor Create(const PropFormat: TPropsFormat = pfAuto);
-    class procedure LoadFromFile(Instance: TPersistent; FileName: string); overload;
+    destructor Destroy; override;
+    class procedure LoadFromFile(Instance: TPersistent; FileName: string; DesignMode: Boolean; Parent: TWinControl); overload;
     class procedure LoadFromFile(Collection: TCollection; FileName: string); overload;
-    class procedure LoadXML(Instance: TPersistent; const XML: XmlString); overload;
-    procedure Read(Instance: TPersistent; Root: IXMLElement; const ReadRoot: Boolean = False);
+    class procedure LoadXML(Instance: TPersistent; const XML: XmlString; const ThemeFile: string; DesignMode: Boolean;
+      Parent: TWinControl); overload;
+    procedure Read(Instance: TPersistent; Root: IXMLElement; ThemeFile: string; DesignMode: Boolean; Parent: TWinControl;
+      const ReadRoot: Boolean = False);
   end;
+
+function FindElement(const Root: IXMLElement; const TagName: XmlString): IXMLElement;
+
+const
+  Replacable: array [0 .. 61] of string = ('�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�',
+    '�', '�', '�', '%', '$', '&', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�',
+    '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�', '�');
+  Replacement: array [0 .. 61] of string = ('aacute;', 'eacute;', 'iacute;', 'oacute;', 'uacute;', 'Aacute;', 'Eacute;',
+    'Iacute;', 'Oacute;', 'Uacute;', 'ntilde;', 'Ntilde;', 'atilde;', 'Atilde;', 'acirc;', 'Acirc;', 'ccedil;', 'Ccedil;',
+    'otilde;', 'Otilde;', 'percent;', 'dollar;', 'ecomerc;', 'euro;', 'ecirc;', 'Ecirc;', 'pound;', 'ocir;', 'Ocirc;', 'agrave;',
+    'egrave;', 'igrave;', 'ograve;', 'ugrave;', 'Agrave;', 'Egrave;', 'Igrave;', 'Ograve;', 'Ugrave;', 'Ouml;', 'ouml;', 'Uuml;',
+    'uuml;', 'etrema;', 'Etrema;', 'atrema;', 'Atrema;', 'itrema;', 'Itrema;', 'abola;', 'Abola;', 'aejunto;', 'Aejunto;',
+    'dtrans;', 'Dtrans;', 'otrac;', 'Otrac;', 'plong;', 'Plong;', 'beta;', 'dblarrowright;', 'dblarrowleft;');
 
 var
   DefaultPropFormat: TPropsFormat = pfNodes;
@@ -87,19 +97,24 @@ var
 implementation
 
 {$IFDEF UNICODE}
+
 const
-  CP_ACP = 0;  // default to ANSI code page
-  CP_RawByteString = $FFFF;  // codepage of RawByteString string type
+  CP_ACP = 0; // default to ANSI code page
+  CP_RawByteString = $FFFF; // codepage of RawByteString string type
 {$ENDIF}  // UNICODE
 
 const
-  COLLECTIONITEM_NODENAME = 'o';  // do not change!
-  PROP_FORMAT = 'PropFormat';  // do not change!
-  StringS_COUNT_NODENAME = 'Count';  // do not change!
-  StringS_PREFIX = 'l';  // do not change!
+  COLLECTIONITEM_NODENAME = 'o'; // do not change!
+  PROP_FORMAT = 'PropFormat'; // do not change!
+  StringS_COUNT_NODENAME = 'Count'; // do not change!
+  StringS_PREFIX = 'l'; // do not change!
 
 var
-  PropFormatValues: array[TPropsFormat] of string = ('auto', 'attr', 'node');
+  PropFormatValues: array [TPropsFormat] of string = (
+    'auto',
+    'attr',
+    'node'
+  );
 
 function IsElementEmpty(Element: IXMLElement; PropsFormat: TPropsFormat): Boolean;
 begin
@@ -107,22 +122,20 @@ begin
     ((PropsFormat = pfNodes) and (Element.ChildNodes.Length = 0));
 end;
 
-procedure CreateDocument(var XMLDoc: IXMLDocument; var Root: IXMLElement;
-  RootNodeName: XmlString);
+procedure CreateDocument(var XMLDoc: IXMLDocument; var Root: IXMLElement; RootNodeName: XmlString);
 begin
   XMLDoc := CreateXMLDoc;
   Root := XMLDoc.CreateElement(RootNodeName);
   XMLDoc.DocumentElement := Root;
 end;
 
-procedure Load(var XMLDoc: IXMLDocument; var XMLRoot: IXMLElement;
-  var PropsFormat: TPropsFormat);
+procedure Load(var XMLDoc: IXMLDocument; var XMLRoot: IXMLElement; var PropsFormat: TPropsFormat);
 var
   i: TPropsFormat;
   PropFormatValue: XmlString;
 begin
   // set root element
-  XMLRoot := XMLDoc.documentElement;
+  XMLRoot := XMLDoc.DocumentElement;
   PropsFormat := pfNodes;
 
   if XMLRoot = nil then
@@ -130,16 +143,17 @@ begin
 
   PropFormatValue := XMLRoot.GetAttribute(PROP_FORMAT);
 
-  for i := Low(TPropsFormat) to High(TPropsFormat) do begin
-    if SameText(PropFormatValue, PropFormatValues[i]) then begin
+  for i := Low(TPropsFormat) to High(TPropsFormat) do
+  begin
+    if SameText(PropFormatValue, PropFormatValues[i]) then
+    begin
       PropsFormat := i;
       Break;
     end;
   end;
 end;
 
-procedure LoadDocument(const FileName: string; var XMLDoc: IXMLDocument;
-  var XMLRoot: IXMLElement; var PropsFormat: TPropsFormat);
+procedure LoadDocument(const FileName: string; var XMLDoc: IXMLDocument; var XMLRoot: IXMLElement; var PropsFormat: TPropsFormat);
 begin
   XMLDoc := CreateXMLDoc;
   { TODO : implement and test preserveWhiteSpace }
@@ -151,9 +165,8 @@ end;
 
 { TOmniXMLWriter }
 
-class procedure TOmniXMLWriter.SaveToFile(const Instance: TPersistent;
-  const FileName: string; const PropFormat: TPropsFormat = pfAuto;
-  const OutputFormat: TOutputFormat = ofNone);
+class procedure TOmniXMLWriter.SaveToFile(const Instance: TPersistent; const FileName: string;
+  const PropFormat: TPropsFormat = pfAuto; const OutputFormat: TOutputFormat = ofNone);
 var
   XMLDoc: IXMLDocument;
   Root: IXMLElement;
@@ -181,8 +194,8 @@ begin
 {$ENDIF}
 end;
 
-class procedure TOmniXMLWriter.SaveXML(const Instance: TPersistent; var XML: XmlString;
-  const PropFormat: TPropsFormat; const OutputFormat: TOutputFormat);
+class procedure TOmniXMLWriter.SaveXML(const Instance: TPersistent; var XML: XmlString; const PropFormat: TPropsFormat;
+  const OutputFormat: TOutputFormat);
 var
   XMLDoc: IXMLDocument;
   Root: IXMLElement;
@@ -221,7 +234,8 @@ var
   PropNode: IXMLElement;
 begin
   case PropsFormat of
-    pfAttributes: Root.SetAttribute(Name, Value);
+    pfAttributes:
+      Root.SetAttribute(Name, Value);
     pfNodes:
       begin
         PropNode := Doc.CreateElement(Name);
@@ -229,6 +243,16 @@ begin
         Root.appendChild(PropNode);
       end;
   end;
+end;
+
+function str_replace(const oldChars, newChars: array of string; const str: string): string;
+var
+  i: Integer;
+begin
+  Assert(Length(oldChars) = Length(newChars));
+  Result := str;
+  for i := 0 to high(oldChars) do
+    Result := StringReplace(Result, oldChars[i], newChars[i], [rfReplaceAll])
 end;
 
 procedure TOmniXMLWriter.WriteCollection(Collection: TCollection; Root: IXMLElement);
@@ -239,8 +263,8 @@ begin
     Write(Collection.Items[i], Root, True, False);
 end;
 
-procedure TOmniXMLWriter.WriteProperty(Instance: TPersistent; PropInfo: PPropInfo;
-  Element: IXMLElement; WriteDefaultValues: Boolean);
+procedure TOmniXMLWriter.WriteProperty(Instance: TPersistent; PropInfo: PPropInfo; Element: IXMLElement;
+  WriteDefaultValues: Boolean);
 var
   PropType: PTypeInfo;
 
@@ -252,7 +276,7 @@ var
       Value := GetWideStrProp(Instance, PropInfo)
     else
       Value := GetStrProp(Instance, PropInfo);
-
+    Value := str_replace(Replacable, Replacement, Value);
     if Value <> '' then
       InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), Value);
   end;
@@ -262,27 +286,30 @@ var
     Value: Longint;
   begin
     Value := GetOrdProp(Instance, PropInfo);
-    if WriteDefaultValues or (Value <> PPropInfo(PropInfo)^.Default) then begin
+    if WriteDefaultValues or (Value <> PPropInfo(PropInfo)^.Default) then
+    begin
       case PropType^.Kind of
-        tkInteger: InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), XMLIntToStr(Value));
+        tkInteger:
+          InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), XMLIntToStr(Value));
         tkChar:
           begin
-            {$IFDEF UNICODE}
+{$IFDEF UNICODE}
             InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), Char(Value));
-            {$ELSE}
+{$ELSE}
             InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), UTF8Decode(AnsiToUtf8(Char(Value))));
-            {$ENDIF}  // UNICODE
+{$ENDIF}  // UNICODE
           end;
-        tkWChar: InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), WideChar(Value));
-        tkSet: InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name),
-          GetSetProp(Instance, PPropInfo(PropInfo), True));
+        tkWChar:
+          InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), WideChar(Value));
+        tkSet:
+          InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), GetSetProp(Instance, PPropInfo(PropInfo), True));
         tkEnumeration:
           begin
             if PropType = System.TypeInfo(Boolean) then
               InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), XMLBoolToStr(Boolean(Value)))
             else if PropType^.Kind = tkInteger then
               InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), XMLIntToStr(Value))
-            // 2003-05-27 (mr): added tkEnumeration processing
+              // 2003-05-27 (mr): added tkEnumeration processing
             else if PropType^.Kind = tkEnumeration then
               InternalWriteText(Element, XmlString(PPropInfo(PropInfo)^.Name), GetEnumName(PropType, Value));
           end;
@@ -327,52 +354,84 @@ var
       i: Integer;
     begin
       SetNodeAttrInt(PropNode, StringS_COUNT_NODENAME, Strings.Count);
-      for i := 0 to Strings.Count - 1 do begin
+      for i := 0 to Strings.Count - 1 do
+      begin
         if Strings[i] <> '' then
           InternalWriteText(PropNode, StringS_PREFIX + IntToStr(i), Strings[i]);
       end;
     end;
+
   begin
     Value := TObject(GetOrdProp(Instance, PropInfo));
-    if (Value <> nil) and (Value is TPersistent) then begin
+    if (Value <> nil) and (Value is TPersistent) then
+    begin
       PropNode := Doc.CreateElement(XmlString(PPropInfo(PropInfo)^.Name));
 
       // write object's properties
       Write(TPersistent(Value), PropNode, False, True, WriteDefaultValues);
-      if Value is TCollection then begin
+      if Value is TCollection then
+      begin
         WriteCollection(TCollection(Value), PropNode);
         if not IsElementEmpty(PropNode, pfNodes) then
-          Element.AppendChild(PropNode);
+          Element.appendChild(PropNode);
       end
-      else if Value is TStrings then begin
+      else if Value is TStrings then
+      begin
         WriteStrings(TStrings(Value));
-        Element.AppendChild(PropNode);
+        Element.appendChild(PropNode);
       end
       else if not IsElementEmpty(PropNode, PropsFormat) then
-        Element.AppendChild(PropNode);
+        Element.appendChild(PropNode);
+    end;
+  end;
+
+  procedure WriteArrayProp;
+  var
+    Value: TArray<TPersistent>;
+    PropNode: IXMLElement;
+    i: Integer;
+  begin
+    Value := TArray<TPersistent>(GetOrdProp(Instance, PropInfo));
+    if Value <> nil then
+    begin
+      PropNode := Doc.CreateElement(XmlString(PPropInfo(PropInfo)^.Name));
+      for i := 0 to High(Value) do
+      begin
+        Write(Value[i], PropNode, True, False, WriteDefaultValues);
+        Element.appendChild(PropNode);
+      end;
     end;
   end;
 
 begin
-  if (PPropInfo(PropInfo)^.GetProc <> nil) then begin
-    PropType := {$IFDEF FPC}@{$ENDIF}PPropInfo(PropInfo).PropType{$IFNDEF FPC}^{$ENDIF};
+  if (PPropInfo(PropInfo)^.GetProc <> nil) then
+  begin
+    PropType := PPropInfo(PropInfo)^.PropType^;
     case PropType^.Kind of
-      tkInteger, tkChar, tkWChar, tkEnumeration, tkSet: WriteOrdProp;
-      tkString, tkLString, tkWString {$IFDEF UNICODE}, tkUString {$ENDIF}: WriteStrProp;
+      tkInteger, tkChar, tkWChar, tkEnumeration, tkSet:
+        WriteOrdProp;
+      tkString, tkLString, tkWString
+{$IFDEF UNICODE}, tkUString
+{$ENDIF}:
+        WriteStrProp;
       tkFloat:
-        if (PropType = System.TypeInfo(TDateTime)) or (PropType = System.TypeInfo(TTime))
-          or (PropType = System.TypeInfo(TDate)) then
-            WriteDateTimeProp
+        if (PropType = System.TypeInfo(TDateTime)) or (PropType = System.TypeInfo(TTime)) or (PropType = System.TypeInfo(TDate))
+        then
+          WriteDateTimeProp
         else
           WriteFloatProp;
-      tkInt64: WriteInt64Prop;
-      tkClass: WriteObjectProp;
+      tkInt64:
+        WriteInt64Prop;
+      tkClass:
+        WriteObjectProp;
+      tkDynArray:
+        WriteArrayProp;
     end;
   end;
 end;
 
-procedure TOmniXMLWriter.Write(Instance: TPersistent; Root: IXMLElement;
-  const WriteRoot: Boolean; const CheckIfEmpty: boolean; const WriteDefaultValues: Boolean);
+procedure TOmniXMLWriter.Write(Instance: TPersistent; Root: IXMLElement; const WriteRoot: Boolean; const CheckIfEmpty: Boolean;
+  const WriteDefaultValues: Boolean);
 var
   PropCount: Integer;
   PropList: PPropList;
@@ -387,15 +446,21 @@ begin
   if Instance is TCollectionItem then
     Element := Doc.CreateElement(COLLECTIONITEM_NODENAME)
   else if WriteRoot then
-    Element := Doc.CreateElement(Instance.ClassName)
+  begin
+    i := 1;
+    while (FindElement(Root, Instance.ClassName + '_' + IntToStr(i)) <> nil) do
+      Inc(i);
+    Element := Doc.CreateElement(Instance.ClassName + '_' + IntToStr(i));
+  end
   else
     Element := Root;
 
   GetMem(PropList, PropCount * SizeOf(Pointer));
   try
     GetPropInfos(Instance.ClassInfo, PropList);
-    for i := 0 to PropCount - 1 do begin
-      PropInfo := PropList^[I];
+    for i := 0 to PropCount - 1 do
+    begin
+      PropInfo := PropList^[i];
       if PropInfo = nil then
         Break;
       if IsStoredProp(Instance, PropInfo) then
@@ -405,21 +470,24 @@ begin
     FreeMem(PropList, PropCount * SizeOf(Pointer));
   end;
 
-  if WriteRoot then begin
+  if WriteRoot then
+  begin
     if CheckIfEmpty and IsElementEmpty(Element, PropsFormat) then
       Exit
-    else begin
+    else
+    begin
       if Root <> nil then
         Root.appendChild(Element)
       else
-        Doc.documentElement := Element;
+        Doc.DocumentElement := Element;
     end;
   end;
 end;
 
 { TOmniXMLReader }
 
-class procedure TOmniXMLReader.LoadXML(Instance: TPersistent; const XML: XmlString);
+class procedure TOmniXMLReader.LoadXML(Instance: TPersistent; const XML: XmlString; const ThemeFile: string; DesignMode: Boolean;
+  Parent: TWinControl);
 var
   XMLDoc: IXMLDocument;
   XMLRoot: IXMLElement;
@@ -438,13 +506,13 @@ begin
     if Instance is TCollection then
       Reader.ReadCollection(TCollection(Instance), XMLRoot)
     else
-      Reader.Read(Instance, XMLRoot, True);
+      Reader.Read(Instance, XMLRoot, ThemeFile, DesignMode, Parent, True);
   finally
     Reader.Free;
   end;
 end;
 
-class procedure TOmniXMLReader.LoadFromFile(Instance: TPersistent; FileName: string);
+class procedure TOmniXMLReader.LoadFromFile(Instance: TPersistent; FileName: string; DesignMode: Boolean; Parent: TWinControl);
 var
   XMLDoc: IXMLDocument;
   XMLRoot: IXMLElement;
@@ -459,7 +527,7 @@ begin
     if Instance is TCollection then
       Reader.ReadCollection(TCollection(Instance), XMLRoot)
     else
-      Reader.Read(Instance, XMLRoot, True);
+      Reader.Read(Instance, XMLRoot, '', DesignMode, Parent, True);
   finally
     Reader.Free;
   end;
@@ -491,7 +559,7 @@ begin
   PropsFormat := PropFormat;
 end;
 
-function TOmniXMLReader.FindElement(const Root: IXMLElement; const TagName: XmlString): IXMLElement;
+function FindElement(const Root: IXMLElement; const TagName: XmlString): IXMLElement;
 var
   i: Integer;
 begin
@@ -499,13 +567,23 @@ begin
   if Root = nil then
     Exit;
   i := 0;
-  while (Result = nil) and (i < Root.ChildNodes.Length) do begin
-    if (Root.ChildNodes.Item[i].NodeType = ELEMENT_NODE)
-      and (CompareText(Root.ChildNodes.Item[i].NodeName, TagName) = 0) then
-        Result := Root.ChildNodes.Item[i] as IXMLElement
+  while (Result = nil) and (i < Root.ChildNodes.Length) do
+  begin
+    if (Root.ChildNodes.Item[i].NodeType = ELEMENT_NODE) and (CompareText(Root.ChildNodes.Item[i].NodeName, TagName) = 0) then
+      Result := Root.ChildNodes.Item[i] as IXMLElement
     else
       Inc(i);
   end;
+end;
+
+destructor TOmniXMLReader.Destroy;
+begin
+  if Assigned(Log) then
+  begin
+   // Log.SaveToFile('log.txt');
+    Log.Free;
+  end;
+  inherited;
 end;
 
 function TOmniXMLReader.InternalReadText(Root: IXMLElement; Name: XmlString; var Value: XmlString): Boolean;
@@ -528,8 +606,8 @@ begin
         if Result then
           Value := PropNode.Text;
       end;
-    else
-      Result := False;
+  else
+    Result := False;
   end;
 end;
 
@@ -541,18 +619,21 @@ begin
   Collection.Clear;
   if Root = nil then
     Exit;
-  for i := 0 to Root.ChildNodes.Length - 1 do begin
-    if Root.ChildNodes.Item[i].NodeType = ELEMENT_NODE then begin
-      if Root.ChildNodes.Item[i].NodeName = COLLECTIONITEM_NODENAME then begin
+  for i := 0 to Root.ChildNodes.Length - 1 do
+  begin
+    if Root.ChildNodes.Item[i].NodeType = ELEMENT_NODE then
+    begin
+      if Root.ChildNodes.Item[i].NodeName = COLLECTIONITEM_NODENAME then
+      begin
         Item := Collection.Add;
-        Read(Item, Root.ChildNodes.Item[i] as IXMLElement, False);
+        Read(Item, Root.ChildNodes.Item[i] as IXMLElement, '', False, nil);
       end;
     end;
   end;
 end;
 
-procedure TOmniXMLReader.ReadProperty(Instance: TPersistent; PropInfo: Pointer;
-  Element: IXMLElement);
+procedure TOmniXMLReader.ReadProperty(Instance: TPersistent; PropInfo: Pointer; Element: IXMLElement; ThemeFile: string;
+  DesignMode: Boolean; Parent: TWinControl);
 var
   PropType: PTypeInfo;
 
@@ -573,39 +654,43 @@ var
     Value: TDateTime;
     Text: XmlString;
   begin
-    if InternalReadText(Element, XmlString(PPropInfo(PropInfo)^.Name), Text) then begin
+    if InternalReadText(Element, XmlString(PPropInfo(PropInfo)^.Name), Text) then
+    begin
       if XMLStrToDateTime(Text, Value) then
         SetFloatProp(Instance, PropInfo, Value)
       else
         raise EOmniXMLPersistent.CreateFmt('Error in datetime property %s', [PPropInfo(PropInfo)^.Name]);
     end
     else
-      SetFloatProp(Instance, PropInfo, 0);  // 2004-02-02
+      SetFloatProp(Instance, PropInfo, 0); // 2004-02-02
   end;
 
   procedure ReadStrProp;
   var
     Value: XmlString;
-    {$IFDEF UNICODE}
+{$IFDEF UNICODE}
     TypeData: PTypeData;
     CP: Word;
     RBS: RawByteString;
-    {$ENDIF}  // UNICODE
+{$ENDIF}  // UNICODE
   begin
     if not InternalReadText(Element, XmlString(PPropInfo(PropInfo)^.Name), Value) then
       Value := '';
-
+    Value := str_replace(Replacement, Replacable, Value);
     case PropType^.Kind of
-      tkWString: SetWideStrProp(Instance, PropInfo, Value);
-      {$IFDEF UNICODE}
+      tkWString:
+        SetWideStrProp(Instance, PropInfo, Value);
+{$IFDEF UNICODE}
       tkLString:
         begin
           TypeData := GetTypeData(PropType);
           CP := TypeData^.CodePage;
 
           case CP of
-            CP_ACP: SetAnsiStrProp(Instance, PropInfo, AnsiString(Value));  // default code page
-            CP_UNICODE: SetUnicodeStrProp(Instance, PropInfo, Value);  // Unicode code page
+            CP_ACP:
+              SetAnsiStrProp(Instance, PropInfo, AnsiString(Value)); // default code page
+            CP_UTF16:
+              SetStrProp(Instance, PropInfo, Value); // Unicode code page
           else
             // convert to valid codepage using RawByteString
             RBS := UTF8Encode(Value);
@@ -614,7 +699,7 @@ var
             SetAnsiStrProp(Instance, PropInfo, RBS);
           end;
         end;
-      {$ENDIF}  // UNICODE
+{$ENDIF}  // UNICODE
     else
       SetStrProp(Instance, PropInfo, Value);
     end;
@@ -626,7 +711,8 @@ var
     IntValue: Integer;
     BoolValue: Boolean;
   begin
-    if InternalReadText(Element, XmlString(PPropInfo(PropInfo)^.Name), Value) then begin
+    if InternalReadText(Element, XmlString(PPropInfo(PropInfo)^.Name), Value) then
+    begin
       case PropType^.Kind of
         tkInteger:
           if XMLStrToInt(Value, IntValue) then
@@ -635,23 +721,27 @@ var
             raise EOmniXMLPersistent.CreateFmt('Invalid integer value (%s).', [Value]);
         tkChar:
           begin
-            {$IFDEF UNICODE}
+{$IFDEF UNICODE}
             SetOrdProp(Instance, PropInfo, Ord(Char(Value[1])));
-            {$ELSE}
+{$ELSE}
             SetOrdProp(Instance, PropInfo, Ord(Char(Utf8ToAnsi(UTF8Encode(Value))[1])));
-            {$ENDIF}  // UNICODE
+{$ENDIF}  // UNICODE
           end;
-        tkWChar: SetOrdProp(Instance, PropInfo, Cardinal(Value[1]));
-        tkSet: SetSetProp(Instance, PropInfo, Value);
+        tkWChar:
+          SetOrdProp(Instance, PropInfo, Cardinal(Value[1]));
+        tkSet:
+          SetSetProp(Instance, PropInfo, Value);
         tkEnumeration:
           begin
-            if PropType = System.TypeInfo(Boolean) then begin
+            if PropType = System.TypeInfo(Boolean) then
+            begin
               if XMLStrToBool(Value, BoolValue) then
                 SetOrdProp(Instance, PropInfo, Ord(BoolValue))
               else
                 raise EOmniXMLPersistent.CreateFmt('Invalid boolean value (%s).', [Value]);
             end
-            else if PropType^.Kind = tkInteger then begin
+            else if PropType^.Kind = tkInteger then
+            begin
               if XMLStrToInt(Value, IntValue) then
                 SetOrdProp(Instance, PropInfo, IntValue)
               else
@@ -672,7 +762,8 @@ var
     Value: XmlString;
     IntValue: Int64;
   begin
-    if InternalReadText(Element, XmlString(PPropInfo(PropInfo)^.Name), Value) then begin
+    if InternalReadText(Element, XmlString(PPropInfo(PropInfo)^.Name), Value) then
+    begin
       if XMLStrToInt64(Value, IntValue) then
         SetInt64Prop(Instance, PropInfo, IntValue)
       else
@@ -698,52 +789,126 @@ var
       Count := GetNodeAttrInt(PropNode, StringS_COUNT_NODENAME, 0);
       for i := 0 to Count - 1 do
         Strings.Add('');
-        
-      for i := 0 to Strings.Count - 1 do begin
+
+      for i := 0 to Strings.Count - 1 do
+      begin
         if InternalReadText(PropNode, StringS_PREFIX + IntToStr(i), Value) then
           Strings[i] := Value;
       end;
     end;
+
   begin
     Value := TObject(GetOrdProp(Instance, PropInfo));
-    if (Value <> nil) and (Value is TPersistent) then begin
+    if (Value <> nil) and (Value is TPersistent) then
+    begin
       PropNode := FindElement(Element, XmlString(PPropInfo(PropInfo)^.Name));
-      Read(TPersistent(Value), PropNode);
+      Read(TPersistent(Value), PropNode, ThemeFile, DesignMode, Parent);
       if Value is TCollection then
         ReadCollection(TCollection(Value), PropNode)
       else if Value is TStrings then
-        ReadStrings(TStrings(Value));
+        ReadStrings(TStrings(Value))
+      else
+        SetObjectProp(Instance, String(PPropInfo(PropInfo)^.Name), Value);
+
     end;
+  end;
+
+  procedure ReadArrayProp;
+  var
+    Value: TArray<TPersistent>;
+    PropNode, Child: IXMLElement;
+    i: Integer;
+    O: TPersistent;
+    C: TClass;
+    RttiContext: TRttiContext;
+    ClsName: string;
+    Value2: TValue;
+    CType: TRttiType;
+  begin
+    Value := TArray<TPersistent>(GetOrdProp(Instance, PropInfo));
+
+    SetLength(Value, 0);
+
+    PropNode := FindElement(Element, XmlString(PPropInfo(PropInfo)^.Name));
+    if PropNode <> nil then
+    begin
+      Log.Add('Read xmlelement: ' + PropNode.TagName);
+      for i := 0 to PropNode.ChildNodes.Length - 1 do
+      begin
+        if PropNode.ChildNodes.Item[i].NodeName = '#text' then
+          Continue;
+
+        Child := FindElement(PropNode, PropNode.ChildNodes.Item[i].NodeName);
+        ClsName := Copy(PropNode.ChildNodes.Item[i].NodeName, 1, Pos('_', PropNode.ChildNodes.Item[i].NodeName) - 1);
+        C := GetClass(ClsName);
+
+        Log.Add('Read xmlelement_item: ' + PropNode.ChildNodes.Item[i].NodeName + ' ClassName: ' + ClsName);
+        if C = nil then
+          Continue;
+
+        CType := RttiContext.GetType(C);
+
+        Value2 := CType.GetMethod('Create').Invoke(C, [ThemeFile, DesignMode]);
+
+        TObject(O) := Value2.AsObject;
+
+        if CType.GetMethod('NeedsHandle').Invoke(O, []).AsBoolean then
+          CType.GetMethod('SetParent').Invoke(O, [Parent]);
+
+        Read(O, Child, ThemeFile, DesignMode, Parent);
+
+        SetLength(Value, Length(Value) + 1);
+
+        Value[High(Value)] := O;
+      end;
+    end;
+    if Length(Value) > 0 then
+      SetDynArrayProp(Instance, String(PPropInfo(PropInfo)^.Name), Value);
   end;
 
 begin
   PropType := PPropInfo(PropInfo)^.PropType^;
-  if (PPropInfo(PropInfo)^.GetProc <> nil) and
-     ((PropType^.Kind = tkClass) or (PPropInfo(PropInfo)^.SetProc <> nil)) and
-     (IsStoredProp(Instance, PPropInfo(PropInfo))) then
+  if (PPropInfo(PropInfo)^.GetProc <> nil) and ((PropType^.Kind = tkClass) or (PPropInfo(PropInfo)^.SetProc <> nil)) and
+    (IsStoredProp(Instance, PPropInfo(PropInfo))) then
   begin
-    case PropType^.Kind of
-      tkInteger, tkChar, tkWChar, tkEnumeration, tkSet: ReadOrdProp;
-      tkString, tkLString, tkWString {$IFDEF UNICODE}, tkUString {$ENDIF}: ReadStrProp;
-      tkFloat:
-        if (PropType = System.TypeInfo(TDateTime)) or (PropType = System.TypeInfo(TTime))
-          or (PropType = System.TypeInfo(TDate)) then
+    try
+      Log.Add('Read property: ' + PPropInfo(PropInfo)^.Name + '_' + PropType^.Name);
+      case PropType^.Kind of
+        tkInteger, tkChar, tkWChar, tkEnumeration, tkSet:
+          ReadOrdProp;
+        tkString, tkLString, tkWString {$IFDEF UNICODE}, tkUString
+{$ENDIF}:
+          ReadStrProp;
+        tkFloat:
+          if (PropType = System.TypeInfo(TDateTime)) or (PropType = System.TypeInfo(TTime)) or (PropType = System.TypeInfo(TDate))
+          then
             ReadDateTimeProp
-        else
-          ReadFloatProp;
-      tkInt64: ReadInt64Prop;
-      tkClass: ReadObjectProp;
+          else
+            ReadFloatProp;
+        tkInt64:
+          ReadInt64Prop;
+        tkClass:
+          ReadObjectProp;
+        tkDynArray:
+          ReadArrayProp;
+      end;
+    except
+      on E: Exception do
+        raise Exception.Create(Log.Text + E.Message);
     end;
   end;
 end;
 
-procedure TOmniXMLReader.Read(Instance: TPersistent; Root: IXMLElement; const ReadRoot: Boolean);
+procedure TOmniXMLReader.Read(Instance: TPersistent; Root: IXMLElement; ThemeFile: string; DesignMode: Boolean;
+  Parent: TWinControl; const ReadRoot: Boolean);
 var
   PropCount: Integer;
   PropList: PPropList;
   i: Integer;
   PropInfo: PPropInfo;
 begin
+  if Log = nil then
+    Log := TStringList.Create;
   if ReadRoot then
     Root := FindElement(Root, Instance.ClassName);
 
@@ -751,15 +916,17 @@ begin
     Exit;
 
   PropCount := GetTypeData(Instance.ClassInfo)^.PropCount;
-  if PropCount > 0 then begin
+  if PropCount > 0 then
+  begin
     GetMem(PropList, PropCount * SizeOf(Pointer));
     try
       GetPropInfos(Instance.ClassInfo, PropList);
-      for i := 0 to PropCount - 1 do begin
-        PropInfo := PropList^[I];
+      for i := 0 to PropCount - 1 do
+      begin
+        PropInfo := PropList^[i];
         if PropInfo = nil then
           Break;
-        ReadProperty(Instance, PropInfo, Root);
+        ReadProperty(Instance, PropInfo, Root, ThemeFile, DesignMode, Parent);
       end;
     finally
       FreeMem(PropList, PropCount * SizeOf(Pointer));
